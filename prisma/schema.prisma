@@ -1,0 +1,330 @@
+// Capital Ark — non-custodial pledge tracking.
+//
+// Money is stored exclusively as integer cents. There is no column anywhere in
+// this schema that holds a payment instrument, a card token, or a balance: the
+// platform never takes custody of funds, so there is nothing to store.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Connection URLs live in prisma.config.ts as of Prisma 7.
+datasource db {
+  provider = "postgresql"
+}
+
+enum Platform {
+  WINRED
+  ANEDOT
+  ACTBLUE
+}
+
+/// Which body of campaign finance law governs a race. This is not cosmetic:
+/// federal and state regimes differ on who may give at all. North Carolina, for
+/// one, bans contributions from any business entity outright (G.S. 163-278.15),
+/// which the FEC's corporate-treasury rule does not fully cover.
+enum Jurisdiction {
+  FEDERAL
+  STATE
+}
+
+enum PledgeStatus {
+  /// Link generated and clicked out; the user has not told us what happened.
+  PENDING
+  /// Self-attested with no receipt attached.
+  UNVERIFIED
+  /// Receipt attached, or confirmed by a coalition admin.
+  COMPLETED
+  /// User explicitly told us they did not contribute.
+  DECLINED
+  /// Swept by the stale-pledge job after 72h with no resolution.
+  EXPIRED
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum Party {
+  REPUBLICAN
+  DEMOCRAT
+  INDEPENDENT
+  LIBERTARIAN
+  GREEN
+  OTHER
+}
+
+enum TargetStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum ActivityType {
+  PLEDGE_CONFIRMED
+  TARGET_CREATED
+  GOAL_REACHED
+  MEMBER_JOINED
+}
+
+/// Mirrors `auth.users`. `id` is the Supabase auth UID, which is stable across
+/// the anonymous-to-permanent upgrade, so nothing needs remapping when a guest
+/// later claims their account.
+model User {
+  id          String  @id @db.Uuid
+  email       String? @unique
+  displayName String? @map("display_name")
+  avatarUrl   String? @map("avatar_url")
+
+  /// True until the user links an email or OAuth identity.
+  isAnonymous Boolean @default(true) @map("is_anonymous")
+
+  /// FEC requires employer and occupation once a donor's contributions to a
+  /// single committee aggregate past $200. Collected progressively, never at
+  /// signup, and forwarded to the processor's own form as URL prefill.
+  employer   String?
+  occupation String?
+  city       String?
+  state      String? @db.VarChar(2)
+  zip        String? @db.VarChar(10)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships     CoalitionMember[]
+  pledges         Pledge[]
+  coalitionsOwned Coalition[]         @relation("CoalitionCreator")
+  targetsCreated  FundraisingTarget[] @relation("TargetCreator")
+  clickEvents     LinkClickEvent[]
+  activityEvents  ActivityEvent[]
+
+  @@index([isAnonymous])
+  @@map("users")
+}
+
+model Coalition {
+  id          String  @id @default(uuid()) @db.Uuid
+  slug        String  @unique
+  name        String
+  description String?
+  logoUrl     String? @map("logo_url")
+
+  /// Base of every tracking tag this coalition emits. Derived automatically
+  /// from the name so organizers never have to learn what a source code is.
+  trackingPrefix String @map("tracking_prefix") @db.VarChar(24)
+
+  /// Send the bare prefix as the source code instead of appending per-target
+  /// and per-user fragments. Coalitions choose this when the recipient
+  /// committees have agreed to watch for one specific, human-readable code.
+  flatTrackingTag Boolean @default(false) @map("flat_tracking_tag")
+
+  /// When true, only permanent (non-anonymous) accounts may pledge. Off by
+  /// default so the shared-link path stays one tap.
+  requireSignIn Boolean @default(false) @map("require_sign_in")
+
+  isPublic    Boolean  @default(true) @map("is_public")
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy      User                @relation("CoalitionCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members        CoalitionMember[]
+  targets        FundraisingTarget[]
+  activityEvents ActivityEvent[]
+
+  @@index([createdById])
+  @@map("coalitions")
+}
+
+model CoalitionMember {
+  id          String     @id @default(uuid()) @db.Uuid
+  coalitionId String     @map("coalition_id") @db.Uuid
+  userId      String     @map("user_id") @db.Uuid
+  role        MemberRole @default(MEMBER)
+  joinedAt    DateTime   @default(now()) @map("joined_at")
+
+  coalition Coalition @relation(fields: [coalitionId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([coalitionId, userId])
+  @@index([userId])
+  @@map("coalition_members")
+}
+
+model Candidate {
+  id        String  @id @default(uuid()) @db.Uuid
+  slug      String  @unique
+  fullName  String  @map("full_name")
+  legalName String? @map("legal_name")
+  party     Party
+  office    String
+  state     String? @db.VarChar(2)
+  district  String?
+  bio       String?
+  photoUrl  String? @map("photo_url")
+
+  /// The candidate's own official donation page. We only ever append tracking
+  /// and prefill parameters to this; we never proxy or re-host it.
+  ///
+  /// Null until an organizer supplies a real processor URL. Coalitions build
+  /// their target list long before they have every committee's donation page,
+  /// and a target with a goal but no link is honest; guessing a URL and sending
+  /// contributors somewhere unintended is not.
+  donationUrl           String?   @map("donation_url")
+  donationUrlVerifiedAt DateTime? @map("donation_url_verified_at")
+  platform              Platform?
+
+  /// The committee's public site. Not a donation endpoint and never linked as
+  /// one; it's what we show while `donationUrl` is null so an organizer has
+  /// somewhere to go to find the real processor page.
+  websiteUrl             String?   @map("website_url")
+  officialProfileUrl     String?   @map("official_profile_url")
+  officialDataVerifiedAt DateTime? @map("official_data_verified_at")
+
+  /// Governs which attestation and contribution limit apply. Defaults to
+  /// federal only because that is the stricter disclosure regime to land on by
+  /// accident; every state candidate must set this explicitly.
+  jurisdiction Jurisdiction @default(FEDERAL)
+
+  committeeName    String? @map("committee_name")
+  ncsbeCommitteeId String? @unique @map("ncsbe_committee_id")
+  fecCandidateId   String? @unique @map("fec_candidate_id")
+  fecCommitteeId   String? @map("fec_committee_id")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  targets FundraisingTarget[]
+
+  @@index([platform])
+  @@map("candidates")
+}
+
+model FundraisingTarget {
+  id          String @id @default(uuid()) @db.Uuid
+  slug        String @unique
+  coalitionId String @map("coalition_id") @db.Uuid
+  candidateId String @map("candidate_id") @db.Uuid
+
+  title       String
+  description String?
+  goalCents   Int       @map("goal_cents")
+  deadline    DateTime?
+
+  /// Suggested amounts in cents, rendered as the amount chips on the card.
+  suggestedAmounts Int[] @default([2500, 5000, 10000, 25000]) @map("suggested_amounts")
+
+  status      TargetStatus @default(ACTIVE)
+  createdById String       @map("created_by_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  coalition      Coalition        @relation(fields: [coalitionId], references: [id], onDelete: Cascade)
+  candidate      Candidate        @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  createdBy      User             @relation("TargetCreator", fields: [createdById], references: [id])
+  pledges        Pledge[]
+  clickEvents    LinkClickEvent[]
+  activityEvents ActivityEvent[]
+
+  @@unique([coalitionId, candidateId])
+  @@index([coalitionId, status])
+  @@map("fundraising_targets")
+}
+
+model Pledge {
+  id       String @id @default(uuid()) @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  targetId String @map("target_id") @db.Uuid
+
+  /// What the user set out to give, captured when the link was generated.
+  amountCents          Int  @map("amount_cents")
+  /// What the user attests they actually gave. May differ from the intent.
+  confirmedAmountCents Int? @map("confirmed_amount_cents")
+  /// What OCR read off the uploaded receipt. Advisory only; the user's own
+  /// attested figure always wins, since OCR is best-effort.
+  ocrAmountCents       Int? @map("ocr_amount_cents")
+
+  status          PledgeStatus @default(PENDING)
+  trackingTagUsed String       @map("tracking_tag_used")
+
+  /// Object key in a private bucket. Served only through short-lived signed
+  /// URLs; receipts routinely contain the donor's name and partial card data.
+  receiptUrl String? @map("receipt_url")
+
+  /// Whether the pledger was still anonymous at pledge time. Drives the
+  /// confirmed-vs-attested split in the progress bar.
+  isAnonymousAtPledge Boolean @default(true) @map("is_anonymous_at_pledge")
+
+  /// Audit trail for the self-attestation. `attestationVersion` pins which
+  /// legal text the user actually agreed to on that date.
+  attestedAt         DateTime? @map("attested_at")
+  attestationVersion String?   @map("attestation_version")
+  /// Salted hash. Deliberately not the raw IP: enough to spot abuse patterns,
+  /// not enough to deanonymize a donor.
+  ipHash             String?   @map("ip_hash")
+  userAgent          String?   @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target      FundraisingTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  clickEvents LinkClickEvent[]
+
+  @@index([targetId, status])
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@map("pledges")
+}
+
+/// Every outbound link generation, logged before the redirect happens.
+model LinkClickEvent {
+  id       String  @id @default(uuid()) @db.Uuid
+  pledgeId String? @map("pledge_id") @db.Uuid
+  targetId String  @map("target_id") @db.Uuid
+  userId   String? @map("user_id") @db.Uuid
+
+  platform     Platform
+  trackingTag  String   @map("tracking_tag")
+  generatedUrl String   @map("generated_url")
+  amountCents  Int?     @map("amount_cents")
+  referrer     String?
+  ipHash       String?  @map("ip_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  pledge Pledge?           @relation(fields: [pledgeId], references: [id], onDelete: SetNull)
+  target FundraisingTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([targetId, createdAt])
+  @@map("link_click_events")
+}
+
+/// Denormalized feed rows. Written on confirm so the dashboard feed is a
+/// single indexed read rather than a union across tables.
+model ActivityEvent {
+  id          String       @id @default(uuid()) @db.Uuid
+  coalitionId String       @map("coalition_id") @db.Uuid
+  targetId    String?      @map("target_id") @db.Uuid
+  actorId     String?      @map("actor_id") @db.Uuid
+  type        ActivityType
+
+  /// Display name captured at write time. Reads "Someone" for anonymous
+  /// pledgers so the feed never leaks an identity the user didn't give us.
+  actorLabel  String? @map("actor_label")
+  amountCents Int?    @map("amount_cents")
+  message     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  coalition Coalition          @relation(fields: [coalitionId], references: [id], onDelete: Cascade)
+  target    FundraisingTarget? @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  actor     User?              @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([coalitionId, createdAt])
+  @@map("activity_events")
+}
