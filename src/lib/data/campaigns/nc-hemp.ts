@@ -37,7 +37,8 @@ import type {
 } from "../fixtures";
 
 const id = (n: string) => `00000000-0000-4000-8000-${n.padStart(12, "0")}`;
-const VERIFIED_AT = new Date("2026-08-08T00:00:00.000Z");
+export const HEMP_LAUNCHED_AT = new Date("2026-08-08T00:00:00.000Z");
+const VERIFIED_AT = HEMP_LAUNCHED_AT;
 
 export const HEMP_IDS = {
   organizer: id("200"),
@@ -59,7 +60,7 @@ export const hempCoalition: FixtureCoalition = {
   slug: "nc-hemp-industry",
   name: "North Carolina Hemp Industry",
   description:
-    "Hemp growers, processors, and retailers across North Carolina backing public officials and candidates who understand the industry. Contributions are personal, made directly to each committee, and tagged HEMP so campaigns can see where they came from.",
+    "Hemp consumers, growers, processors, retailers, and advocates across North Carolina backing public officials and candidates who understand the industry. Contributions are personal, made directly to each committee, and tagged HEMP so campaigns can see where they came from.",
   logoUrl: null,
   trackingPrefix: "HEMP",
   // The whole point of this coalition's tag: every committee sees the literal
@@ -287,8 +288,8 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
-/** Contributor-facing chips. Sized for individuals, not institutions. */
-const SUGGESTED_AMOUNTS = [25_000, 50_000, 100_000, 250_000];
+/** Accessible consumer-sized defaults, stored in cents: $25, $50, $100, $250. */
+const SUGGESTED_AMOUNTS = [2_500, 5_000, 10_000, 25_000];
 
 export const hempCandidates: FixtureCandidate[] = ROWS.map((row) => ({
   id: id(row.n),
@@ -331,3 +332,8 @@ export const hempTargets: FixtureTarget[] = ROWS.map((row) => ({
   deadline: null,
   suggestedAmounts: SUGGESTED_AMOUNTS,
 }));
+
+/** Stable IDs for factual, idempotent launch-history activity rows. */
+export const hempLaunchActivityIds = ROWS.map((row) =>
+  id(String(Number(row.n) + 200)),
+);

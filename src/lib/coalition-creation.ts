@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Jurisdiction, Party } from "@/generated/prisma/enums";
+import { Jurisdiction, Party, Platform } from "@/generated/prisma/enums";
 import {
   detectPlatform,
   FORBIDDEN_PARAMS,
@@ -88,6 +88,24 @@ export function normalizeDonationUrl(rawUrl: string): string {
   url.searchParams.sort();
 
   return url.toString();
+}
+
+/**
+ * Re-checks persisted recipient data at contribution boundaries. Creation
+ * normally stores this canonical shape, but API routes must not assume a
+ * manually seeded or stale row still has a matching processor and safe URL.
+ */
+export function isNormalizedDonationUrlForPlatform(
+  donationUrl: string | null | undefined,
+  platform: Platform | null | undefined,
+): boolean {
+  if (!donationUrl || !platform) return false;
+  try {
+    const normalized = normalizeDonationUrl(donationUrl);
+    return normalized === donationUrl && detectPlatform(normalized) === platform;
+  } catch {
+    return false;
+  }
 }
 
 const donationUrlSchema = z

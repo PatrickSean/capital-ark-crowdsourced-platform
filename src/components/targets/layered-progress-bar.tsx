@@ -10,9 +10,9 @@ import type { ProgressSnapshot } from "@/lib/domain/types";
  *
  * Three segments, ordered by how much we actually know:
  *
- *   verified  — a receipt was attached, or an admin confirmed it
- *   attested  — someone told us they gave, with nothing to back it
- *   pending   — someone clicked through and we don't yet know the outcome
+ *   receipt-backed — a receipt was attached or passed the optional AI check
+ *   self-reported  — someone told us they gave, with nothing to back it
+ *   pending        — someone clicked through and we don't yet know the outcome
  *
  * Collapsing these into one number would be the easy thing and the dishonest
  * thing. Capital Ark has no access to candidate backends, so the bar has to
@@ -79,7 +79,7 @@ export function LayeredProgressBar({
           <Segment
             widthPct={confirmedPct}
             className="bg-verified"
-            title={`${formatCentsShort(confirmedCents)} with receipts`}
+            title={`${formatCentsShort(confirmedCents)} receipt-backed`}
           />
           <Segment
             widthPct={attestedPct}
@@ -137,7 +137,7 @@ function Legend({
     {
       show: confirmedCents > 0,
       swatch: "bg-verified",
-      label: "With receipts",
+      label: "Receipt-backed",
       cents: confirmedCents,
     },
     {

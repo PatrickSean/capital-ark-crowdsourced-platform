@@ -124,6 +124,51 @@ if (opened) {
   check("background scroll is restored", unlocked);
 }
 
+// --- Already-contributed route ---------------------------------------------
+// This path must be discoverable without first visiting the processor and
+// must retain all the same dialog/focus behavior as the outbound flow.
+const alreadyTrigger = page
+  .getByRole("button", { name: "I already contributed" })
+  .first();
+await alreadyTrigger.focus();
+await page.keyboard.press("Enter");
+const alreadyOpened = await page
+  .waitForSelector('[role="dialog"]', { timeout: 3000 })
+  .then(() => true)
+  .catch(() => false);
+check("already-contributed flow opens via keyboard", alreadyOpened);
+
+if (alreadyOpened) {
+  const dialog = page.locator('[role="dialog"]');
+  check(
+    "already-contributed flow has a descriptive name",
+    /already made/i.test((await dialog.getAttribute("aria-label")) ?? ""),
+  );
+  check(
+    "already-contributed flow is two clear steps",
+    /step 1 of 2/i.test(
+      (await dialog.locator('ol[aria-label^="Progress:"]').getAttribute("aria-label")) ??
+        "",
+    ),
+  );
+  check(
+    "already-contributed flow says it will not charge the user",
+    /nothing will be charged/i.test((await dialog.textContent()) ?? ""),
+  );
+
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('[role="dialog"]', {
+    state: "detached",
+    timeout: 3000,
+  });
+  check(
+    "focus returns to already-contributed trigger",
+    /I already contributed/i.test(
+      await page.evaluate(() => document.activeElement?.textContent?.trim() ?? ""),
+    ),
+  );
+}
+
 // --- Reduced motion ---------------------------------------------------------
 const reduced = await browser.newContext({ reducedMotion: "reduce" });
 const rp = await reduced.newPage();

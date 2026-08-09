@@ -34,7 +34,8 @@ enum PledgeStatus {
   PENDING
   /// Self-attested with no receipt attached.
   UNVERIFIED
-  /// Receipt attached, or confirmed by a coalition admin.
+  /// Receipt-backed: securely attached or passed the optional AI consistency
+  /// check. This is not confirmation from committee records.
   COMPLETED
   /// User explicitly told us they did not contribute.
   DECLINED
@@ -76,6 +77,24 @@ enum ActivityType {
   TARGET_CREATED
   GOAL_REACHED
   MEMBER_JOINED
+}
+
+/// Public evidence language for a supporter-reported contribution. This is
+/// separate from payment processing: Capital Ark never handles the payment.
+enum ContributionEvidenceType {
+  SELF_REPORTED
+  RECEIPT_ATTACHED
+  RECEIPT_AI_CHECKED
+}
+
+/// Outcome of the optional automated consistency check. `AI_CHECKED_MATCH`
+/// is still not proof of payment; it means visible receipt fields passed the
+/// server's deterministic recipient, amount, processor, and date gates.
+enum ReceiptCheckStatus {
+  NOT_REQUESTED
+  AI_CHECKED_MATCH
+  AI_NEEDS_REVIEW
+  AI_UNAVAILABLE
 }
 
 /// Mirrors `auth.users`. `id` is the Supabase auth UID, which is stable across
@@ -136,9 +155,9 @@ model Coalition {
   /// Community drives are public and shareable, but are never represented as
   /// having been reviewed by Capital Ark. `isPublic` remains the moderation
   /// kill switch for removing abusive or misleading content.
-  verificationStatus CoalitionVerificationStatus @default(COMMUNITY_UNVERIFIED) @map("verification_status")
-  reviewedAt         DateTime?                     @map("reviewed_at")
-  organizerAttestedAt DateTime?                    @map("organizer_attested_at")
+  verificationStatus  CoalitionVerificationStatus @default(COMMUNITY_UNVERIFIED) @map("verification_status")
+  reviewedAt          DateTime?                   @map("reviewed_at")
+  organizerAttestedAt DateTime?                   @map("organizer_attested_at")
 
   isPublic    Boolean  @default(true) @map("is_public")
   createdById String   @map("created_by_id") @db.Uuid
@@ -266,9 +285,32 @@ model Pledge {
   status          PledgeStatus @default(PENDING)
   trackingTagUsed String       @map("tracking_tag_used")
 
+  /// Client-generated UUID for idempotent no-click contribution reports.
+  clientRequestId String? @map("client_request_id") @db.Uuid
+
+  /// Public trust tier assigned at confirmation. Null while the pledge is
+  /// pending or declined.
+  evidenceType ContributionEvidenceType? @map("evidence_type")
+
   /// Object key in a private bucket. Served only through short-lived signed
   /// URLs; receipts routinely contain the donor's name and partial card data.
   receiptUrl String? @map("receipt_url")
+
+  /// Privacy-preserving AI receipt review metadata. The raw screenshot is not
+  /// stored by the AI path. A keyed SHA-256 digest prevents reuse across
+  /// pledges without creating a globally linkable receipt fingerprint.
+  receiptCheckStatus          ReceiptCheckStatus @default(NOT_REQUESTED) @map("receipt_check_status")
+  receiptEvidenceHash         String?            @unique @map("receipt_evidence_hash") @db.VarChar(64)
+  receiptCheckModel           String?            @map("receipt_check_model") @db.VarChar(100)
+  receiptCheckedAt            DateTime?          @map("receipt_checked_at")
+  receiptExtractedAmountCents Int?               @map("receipt_extracted_amount_cents")
+  receiptContributionDate     DateTime?          @map("receipt_contribution_date") @db.Date
+  receiptCandidateMatched     Boolean?           @map("receipt_candidate_matched")
+  receiptCommitteeMatched     Boolean?           @map("receipt_committee_matched")
+  receiptAmountMatched        Boolean?           @map("receipt_amount_matched")
+  receiptProcessorMatched     Boolean?           @map("receipt_processor_matched")
+  receiptDatePlausible        Boolean?           @map("receipt_date_plausible")
+  receiptCheckReasons         String[]           @default([]) @map("receipt_check_reasons")
 
   /// Whether the pledger was still anonymous at pledge time. Drives the
   /// confirmed-vs-attested split in the progress bar.
@@ -290,6 +332,7 @@ model Pledge {
   target      FundraisingTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
   clickEvents LinkClickEvent[]
 
+  @@unique([userId, clientRequestId])
   @@index([targetId, status])
   @@index([userId, status])
   @@index([status, createdAt])
@@ -330,9 +373,10 @@ model ActivityEvent {
 
   /// Display name captured at write time. Reads "Someone" for anonymous
   /// pledgers so the feed never leaks an identity the user didn't give us.
-  actorLabel  String? @map("actor_label")
-  amountCents Int?    @map("amount_cents")
-  message     String?
+  actorLabel   String?                   @map("actor_label")
+  amountCents  Int?                      @map("amount_cents")
+  message      String?
+  evidenceType ContributionEvidenceType? @map("evidence_type")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -341,5 +385,6 @@ model ActivityEvent {
   actor     User?              @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([coalitionId, createdAt])
+  @@index([targetId, createdAt])
   @@map("activity_events")
 }

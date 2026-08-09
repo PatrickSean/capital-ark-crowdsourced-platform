@@ -1,4 +1,10 @@
-import type { Jurisdiction, Party, Platform } from "@/generated/prisma/enums";
+import type {
+  ContributionEvidenceType,
+  Jurisdiction,
+  Party,
+  Platform,
+  ReceiptCheckStatus,
+} from "@/generated/prisma/enums";
 import type {
   ActivityItem,
   CandidateView,
@@ -22,6 +28,27 @@ export interface CreatePledgeInput {
   isAnonymous: boolean;
   ipHash?: string | null;
   userAgent?: string | null;
+  clientRequestId?: string | null;
+}
+
+export interface ReceiptReviewInput {
+  pledgeId: string;
+  userId: string;
+  status: ReceiptCheckStatus;
+  model?: string | null;
+  checkedAt: Date;
+  extractedAmountCents?: number | null;
+  contributionDate?: Date | null;
+  candidateMatched?: boolean | null;
+  committeeMatched?: boolean | null;
+  amountMatched?: boolean | null;
+  processorMatched?: boolean | null;
+  datePlausible?: boolean | null;
+  reasons: string[];
+}
+
+export interface ReceiptEvidenceInput extends ReceiptReviewInput {
+  evidenceHash: string;
 }
 
 export interface ConfirmPledgeInput {
@@ -30,6 +57,8 @@ export interface ConfirmPledgeInput {
   confirmedAmountCents?: number | null;
   ocrAmountCents?: number | null;
   receiptUrl?: string | null;
+  evidenceType?: ContributionEvidenceType | null;
+  receiptEvidence?: ReceiptEvidenceInput | null;
   attestationVersion: string;
   declined?: boolean;
 }
@@ -109,12 +138,17 @@ export interface Store {
   getTargetById(targetId: string): Promise<TargetView | null>;
   getProgress(targetId: string): Promise<ProgressSnapshot>;
   listActivity(coalitionId: string, limit?: number): Promise<ActivityItem[]>;
+  listActivityForTarget(
+    targetId: string,
+    limit?: number,
+  ): Promise<ActivityItem[]>;
 
   createPledge(input: CreatePledgeInput): Promise<PledgeView>;
   getPledge(pledgeId: string): Promise<PledgeView | null>;
   getPledgeConfirmationContext(
     pledgeId: string,
   ): Promise<PledgeConfirmationContext | null>;
+  recordReceiptReview(input: ReceiptReviewInput): Promise<boolean>;
   confirmPledge(input: ConfirmPledgeInput): Promise<PledgeView | null>;
   listResumablePledges(userId: string): Promise<ResumablePledge[]>;
 

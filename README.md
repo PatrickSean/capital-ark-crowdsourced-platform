@@ -127,11 +127,38 @@ the fictional processor examples.
 
 Supabase is optional. Set `NEXT_PUBLIC_AUTH_MODE=local` for the initial
 DigitalOcean deployment: anonymous visitor identities and pledge progress are
-persisted in PostgreSQL, while email account claiming and receipt uploads stay
-hidden. If you later switch to Supabase, set the mode to `supabase`, configure
-Auth and private Storage, and then apply `prisma/sql/rls.sql` in the Supabase
-SQL Editor. That SQL is Supabase-specific and must not be run against a generic
-DigitalOcean PostgreSQL database.
+persisted in PostgreSQL, while email account claiming and long-lived private
+receipt storage stay hidden. Optional AI receipt checking does not require
+Supabase: the screenshot stays in request memory, is sent to OpenAI only after
+explicit consent, and is discarded after the check. If you later switch to
+Supabase, set the mode to `supabase`, configure Auth and private Storage, and
+then apply `prisma/sql/rls.sql` in the Supabase SQL Editor. That SQL is
+Supabase-specific and must not be run against a generic DigitalOcean PostgreSQL
+database.
+
+## Optional AI receipt checking
+
+Set the encrypted, server-only `OPENAI_API_KEY` to offer an optional screenshot
+consistency check. `OPENAI_RECEIPT_MODEL` defaults to `gpt-5-mini`, and
+`OPENAI_RECEIPT_IMAGE_DETAIL` defaults to `high`. The feature is capability
+detected at runtime; a missing key is not a health-check failure and never
+blocks self-reporting.
+
+The endpoint accepts one PNG, JPEG, or WebP image up to 8 MB. It validates the
+container signature, rate-limits by visitor and hashed IP, sends the image with
+`store: false`, and requests strict structured output. The model extracts fields
+without receiving the expected candidate, committee, or amount. Server code
+then independently matches recipient, processor, exact amount, and a plausible
+date. Ambiguous or mismatching results remain self-reported. A full match earns
+the label `AI-checked receipt`, not `verified contribution`.
+
+Capital Ark does not persist the raw screenshot on this path. It retains only
+the model name, controlled reason codes, extracted amount/date, match flags, and
+a keyed SHA-256 digest used to prevent the same screenshot from backing two
+pledges. The short-lived evidence token is encrypted and bound to the user,
+pledge, target, and amount. OpenAI Responses application-state storage is
+disabled, but standard abuse-monitoring logs may still be retained by OpenAI
+for up to 30 days unless the API organization has Zero Data Retention.
 
 ## DigitalOcean App Platform
 
@@ -148,6 +175,9 @@ the same DigitalOcean region. Configure:
   `NEXT_PUBLIC_AUTH_MODE=local`, `NEXT_PUBLIC_ENABLE_DRIVE_CREATION=true`,
   `NEXT_PUBLIC_SITE_URL=${APP_URL}`, `SEED_DEMO_DATA=false`, and a random
   encrypted `IP_HASH_SALT`
+- optional encrypted runtime variables: `OPENAI_API_KEY`,
+  `OPENAI_RECEIPT_MODEL=gpt-5-mini`, and
+  `OPENAI_RECEIPT_IMAGE_DETAIL=high`
 
 Public creation accepts one to twenty candidates per drive. Community-created
 drives are immediately shareable and visibly labeled unverified; the feature

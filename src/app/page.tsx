@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { isDemoMode, store } from "@/lib/data";
-import { ActivityType } from "@/generated/prisma/enums";
+import {
+  ActivityType,
+  ContributionEvidenceType,
+} from "@/generated/prisma/enums";
 import type { ActivityItem } from "@/lib/domain/types";
 import { formatCentsShort } from "@/lib/money";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -262,17 +265,7 @@ function SafeActivityMessage({
   if (item.type === ActivityType.PLEDGE_CONFIRMED) {
     return (
       <>
-        A contribution
-        {item.amountCents !== null && (
-          <>
-            {" "}
-            of {" "}
-            <span className="font-semibold text-ink-900 tabular-nums">
-              {formatCentsShort(item.amountCents)}
-            </span>
-          </>
-        )}{" "}
-        was confirmed
+        A supporter {safeContributionEvidence(item)}
         {candidate && (
           <>
             {" "}
@@ -309,6 +302,40 @@ function SafeActivityMessage({
         </>
       )}
       .
+    </>
+  );
+}
+
+function safeContributionEvidence(item: ActivityItem) {
+  const amount = item.amountCents !== null && (
+    <span className="font-semibold text-ink-900 tabular-nums">
+      {formatCentsShort(item.amountCents)}
+    </span>
+  );
+
+  if (item.evidenceType === ContributionEvidenceType.RECEIPT_AI_CHECKED) {
+    return (
+      <>
+        added an AI-checked receipt for{" "}
+        {amount ? <>a {amount} contribution</> : "a contribution"}
+      </>
+    );
+  }
+
+  if (item.evidenceType === ContributionEvidenceType.RECEIPT_ATTACHED) {
+    return (
+      <>
+        added{" "}
+        {amount
+          ? <>a receipt-backed {amount} contribution</>
+          : "a receipt-backed contribution"}
+      </>
+    );
+  }
+
+  return (
+    <>
+      reported {amount ? <>a {amount} contribution</> : "a contribution"}
     </>
   );
 }

@@ -69,6 +69,31 @@ export default async function PrivacyPage() {
               public. If you claim an account, the authentication provider may
               store your email address and session information.
             </p>
+            <p>
+              If optional AI receipt checking is available, it runs only after
+              you affirmatively choose it. Before submitting, crop the image to
+              the receipt and hide donor names, addresses, email addresses, and
+              card digits. Capital Ark sends that screenshot to OpenAI for a
+              one-time consistency check. Self-reporting remains available
+              without sending an image to OpenAI.
+            </p>
+            <p>
+              Capital Ark does not save the raw screenshot on the AI-checking
+              path. It stores limited derived information: the model used,
+              controlled review reasons, extracted amount and date, recipient
+              and processor match flags, and a keyed image digest that prevents
+              one screenshot from backing multiple contributions. The public
+              site shows only a general evidence label, never those receipt
+              details.
+            </p>
+            <p>
+              AI requests use the OpenAI Responses API with application-state
+              storage disabled. OpenAI may still retain abuse-monitoring logs,
+              including submitted content, for up to 30 days unless Capital
+              Ark&rsquo;s API organization has Zero Data Retention. An AI-checked
+              match is not conclusive proof that a committee accepted a
+              contribution.
+            </p>
           </PolicySection>
 
           <PolicySection title="How information is used and shared">
@@ -83,6 +108,12 @@ export default async function PrivacyPage() {
               application, database, authentication, or private storage. When
               you open a donation page, you leave Capital Ark and the campaign
               processor&rsquo;s own privacy policy applies.
+            </p>
+            <p>
+              OpenAI acts as an infrastructure provider only when you choose
+              optional AI receipt checking. Capital Ark does not use receipt
+              images to generate political messaging, target supporters, or
+              train its own models.
             </p>
             <p>
               A WhatsApp share button opens WhatsApp with a draft containing

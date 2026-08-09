@@ -12,15 +12,15 @@ export interface ReceiptResult {
   ocrConfidence: number;
 }
 
-const MAX_BYTES = 10 * 1024 * 1024;
-const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/heic"];
+const MAX_BYTES = 8 * 1024 * 1024;
+const ACCEPTED = ["image/png", "image/jpeg", "image/webp"];
 
 /**
  * Optional receipt attachment with in-browser OCR.
  *
- * The image is read locally and only uploaded on confirm. Running OCR client
- * side means a document with the donor's name and partial card number never
- * touches our servers just to extract a dollar figure.
+ * The image is read locally and is sent for the optional receipt check only
+ * after the contributor explicitly consents and confirms. Local OCR can
+ * suggest an amount before that upload happens.
  */
 export function ReceiptDropzone({
   onResult,
@@ -54,7 +54,7 @@ export function ReceiptDropzone({
         return;
       }
       if (file.size > MAX_BYTES) {
-        setError("That image is over 10MB. Try a screenshot instead of a photo.");
+        setError("That image is over 8MB. Try cropping the screenshot first.");
         return;
       }
 
@@ -172,9 +172,7 @@ export function ReceiptDropzone({
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/heic"
-        // Sends mobile users straight to the camera rather than a file browser.
-        capture="environment"
+        accept="image/png,image/jpeg,image/webp"
         className="sr-only"
         onChange={(e) => {
           const file = e.target.files?.[0];

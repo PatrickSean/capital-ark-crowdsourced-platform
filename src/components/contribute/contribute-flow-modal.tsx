@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/primitives";
@@ -28,17 +28,29 @@ import { ClaimAccountCard } from "@/components/account/claim-account-card";
 /**
  * The contribute-and-track flow.
  *
- * Steps: choose an amount, go to the processor, confirm what happened. The
- * user always knows which of the three they're on, and every step has a way
- * out that doesn't strand them.
+ * The normal path is amount → processor → confirmation. Someone who already
+ * gave uses the shorter amount → confirmation path and never creates a fake
+ * processor click. Every step stays resumable and clearly labeled.
  */
 type Step = "amount" | "waiting" | "confirm" | "done";
-type ReceiptOutcome = "not-requested" | "stored" | "failed";
+type ReceiptOutcome =
+  | "not-requested"
+  | "ai-checked"
+  | "receipt-attached"
+  | "needs-review"
+  | "unavailable";
+type EvidenceMethod = "self-reported" | "receipt-backed";
+
+export type ContributionEntryPoint = "donate" | "already-contributed";
+
+const MAX_CONTRIBUTION_CENTS = 100_000_00;
 
 export function ContributeFlowModal({
   target,
   open,
   onClose,
+  entryPoint = "donate",
+  receiptReviewAvailable = false,
   initialAmountCents,
   resumePledgeId,
   onProgressChange,
@@ -46,6 +58,8 @@ export function ContributeFlowModal({
   target: TargetView;
   open: boolean;
   onClose: () => void;
+  entryPoint?: ContributionEntryPoint;
+  receiptReviewAvailable?: boolean;
   initialAmountCents?: number | null;
   /** Set when reopening from the "finish confirming" banner. */
   resumePledgeId?: string | null;
@@ -71,15 +85,24 @@ export function ContributeFlowModal({
     resumePledgeId ?? null,
   );
   const [outboundUrl, setOutboundUrl] = useState<string | null>(null);
+  const noClickIntentRef = useRef<{
+    amountCents: number;
+    key: string;
+  } | null>(null);
 
   const [confirmedText, setConfirmedText] = useState("");
   const [editingAmount, setEditingAmount] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptResult | null>(null);
-  const [uploadedReceiptKey, setUploadedReceiptKey] = useState<string | null>(
-    null,
-  );
+  const receiptFileRef = useRef<File | null>(null);
+  const [receiptEvidenceToken, setReceiptEvidenceToken] = useState<
+    string | null
+  >(null);
   const [receiptOutcome, setReceiptOutcome] =
     useState<ReceiptOutcome>("not-requested");
+  const [evidenceMethod, setEvidenceMethod] =
+    useState<EvidenceMethod>("self-reported");
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [receiptAiConsent, setReceiptAiConsent] = useState(false);
   const [recordedAmountCents, setRecordedAmountCents] = useState<number | null>(
     null,
   );
@@ -100,7 +123,8 @@ export function ContributeFlowModal({
   });
 
   // Reset everything when the modal is dismissed, so reopening is a clean run
-  // rather than a half-finished one.
+  // rather than a half-finished one. The zero-delay callback keeps state work
+  // out of the effect body while still making the next open a clean session.
   useEffect(() => {
     if (open) return;
     const timer = window.setTimeout(() => {
@@ -108,8 +132,12 @@ export function ContributeFlowModal({
       setPledgeId(resumePledgeId ?? null);
       setOutboundUrl(null);
       setReceipt(null);
-      setUploadedReceiptKey(null);
+      receiptFileRef.current = null;
+      setReceiptEvidenceToken(null);
       setReceiptOutcome("not-requested");
+      setEvidenceMethod("self-reported");
+      setEvidenceError(null);
+      setReceiptAiConsent(false);
       setRecordedAmountCents(null);
       setAttested(false);
       setAttestError(null);
@@ -117,12 +145,12 @@ export function ContributeFlowModal({
       setConfirmedText("");
       setEditingAmount(false);
       reset();
-    }, 200);
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [open, resumePledgeId, reset]);
 
   const effectiveConfirmedCents = useCallback(() => {
-    if (editingAmount) return parseAmountToCents(confirmedText);
+    if (editingAmount) return parseContributionAmount(confirmedText);
     return amountCents;
   }, [editingAmount, confirmedText, amountCents]);
 
@@ -183,6 +211,59 @@ export function ContributeFlowModal({
     }
   }, [amountCents, ensureIdentity, reset, startWatching, target]);
 
+  /**
+   * Starts a normal owned PENDING pledge without logging a processor click.
+   * This is for someone who gave before arriving at Capital Ark; it must not
+   * pretend they used our tracked outbound link.
+   */
+  const handleAlreadyContributed = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await ensureIdentity();
+
+      if (
+        !noClickIntentRef.current ||
+        noClickIntentRef.current.amountCents !== amountCents
+      ) {
+        noClickIntentRef.current = {
+          amountCents,
+          key: window.crypto.randomUUID(),
+        };
+      }
+
+      const res = await fetch(
+        `/api/targets/${encodeURIComponent(target.id)}/pledges`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "idempotency-key": noClickIntentRef.current.key,
+          },
+          body: JSON.stringify({ amountCents }),
+        },
+      );
+      const payload = await res.json();
+      const nextPledgeId = payload?.pledge?.id;
+
+      if (!res.ok || typeof nextPledgeId !== "string") {
+        setError(
+          payload?.error?.message ??
+            "We couldn't start the confirmation. Please try again.",
+        );
+        return;
+      }
+
+      setPledgeId(nextPledgeId);
+      setStep("confirm");
+    } catch {
+      setError("We couldn't start the confirmation. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }, [amountCents, ensureIdentity, target.id]);
+
   const submitConfirmation = useCallback(
     async (declined: boolean) => {
       if (!pledgeId) {
@@ -190,24 +271,35 @@ export function ContributeFlowModal({
         return;
       }
 
-      if (!declined && !attested) {
-        setAttestError(
-          "Please confirm the statement above so we can record this.",
-        );
-        return;
+      if (!declined) {
+        let invalid = false;
+
+        if (evidenceMethod === "receipt-backed" && !receipt) {
+          setEvidenceError(
+            "Add a receipt image, or choose self-report to continue without one.",
+          );
+          invalid = true;
+        } else if (evidenceMethod === "receipt-backed" && !receiptAiConsent) {
+          setEvidenceError(
+            "Confirm that you agree to the optional AI receipt check, or choose self-report.",
+          );
+          invalid = true;
+        }
+        if (!attested) {
+          setAttestError(
+            "Please confirm the statement above so we can record this.",
+          );
+          invalid = true;
+        }
+        if (invalid) return;
       }
 
       setBusy(true);
       setError(null);
       setAttestError(null);
+      setEvidenceError(null);
 
       try {
-        let receiptUrl = declined ? null : uploadedReceiptKey;
-        if (!declined && receipt && !receiptUrl) {
-          receiptUrl = await uploadReceipt(pledgeId, receipt);
-          if (receiptUrl) setUploadedReceiptKey(receiptUrl);
-        }
-
         const confirmed = declined ? null : effectiveConfirmedCents();
 
         if (!declined && confirmed === null) {
@@ -218,6 +310,43 @@ export function ContributeFlowModal({
           return;
         }
 
+        let nextEvidenceToken = declined ? null : receiptEvidenceToken;
+        let nextReceiptOutcome: ReceiptOutcome = declined
+          ? "not-requested"
+          : receiptOutcome;
+
+        if (
+          !declined &&
+          confirmed !== null &&
+          evidenceMethod === "receipt-backed" &&
+          receipt &&
+          !nextEvidenceToken &&
+          nextReceiptOutcome === "not-requested"
+        ) {
+          const check = await checkReceipt({
+            pledgeId,
+            confirmedAmountCents: confirmed,
+            receipt,
+          });
+
+          nextEvidenceToken = check.evidenceToken;
+          nextReceiptOutcome = check.outcome;
+          setReceiptEvidenceToken(check.evidenceToken);
+          setReceiptOutcome(check.outcome);
+
+          // Never turn a requested receipt check into a self-report behind the
+          // contributor's back. If matching is unavailable or inconclusive,
+          // pause here, select the honest fallback, and require their next
+          // explicit click before anything is added to public progress.
+          if (check.outcome !== "ai-checked") {
+            setReceipt(null);
+            receiptFileRef.current = null;
+            setReceiptAiConsent(false);
+            setEvidenceMethod("self-reported");
+            return;
+          }
+        }
+
         const res = await fetch("/api/pledges/confirm", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -226,8 +355,11 @@ export function ContributeFlowModal({
             declined,
             attested: !declined,
             confirmedAmountCents: confirmed,
-            ocrAmountCents: receipt?.ocrAmountCents ?? null,
-            receiptUrl,
+            ocrAmountCents:
+              evidenceMethod === "receipt-backed"
+                ? receipt?.ocrAmountCents ?? null
+                : null,
+            receiptEvidenceToken: nextEvidenceToken,
             attestationVersion,
           }),
         });
@@ -235,6 +367,23 @@ export function ContributeFlowModal({
         const payload = await res.json();
 
         if (!res.ok) {
+          const errorCode = payload?.error?.code;
+          if (errorCode === "invalid_receipt_evidence") {
+            // The short-lived token can expire while the modal remains open.
+            // Clear it so the next click performs a fresh check.
+            setReceiptEvidenceToken(null);
+            setReceiptOutcome("not-requested");
+          } else if (errorCode === "receipt_already_used") {
+            // Never keep retrying evidence the server has already claimed for
+            // another pledge. Discard it locally and offer an explicit
+            // self-report fallback instead.
+            setReceipt(null);
+            receiptFileRef.current = null;
+            setReceiptEvidenceToken(null);
+            setReceiptOutcome("not-requested");
+            setReceiptAiConsent(false);
+            setEvidenceMethod("self-reported");
+          }
           setError(
             payload?.error?.message ??
               "We couldn't save that. Please try again.",
@@ -245,18 +394,19 @@ export function ContributeFlowModal({
         if (payload.progress) onProgressChange?.(payload.progress);
 
         if (declined) {
+          noClickIntentRef.current = null;
           onClose();
           router.refresh();
           return;
         }
 
-        const storedReceipt = Boolean(payload?.pledge?.receiptUrl);
         setReceiptOutcome(
-          storedReceipt ? "stored" : receipt ? "failed" : "not-requested",
+          receiptOutcomeFromEvidenceType(payload?.pledge?.evidenceType),
         );
         setRecordedAmountCents(
           payload?.pledge?.confirmedAmountCents ?? confirmed ?? amountCents,
         );
+        noClickIntentRef.current = null;
         setStep("done");
         router.refresh();
       } catch {
@@ -272,7 +422,10 @@ export function ContributeFlowModal({
       attested,
       attestationVersion,
       receipt,
-      uploadedReceiptKey,
+      receiptAiConsent,
+      evidenceMethod,
+      receiptEvidenceToken,
+      receiptOutcome,
       effectiveConfirmedCents,
       amountCents,
       onProgressChange,
@@ -281,20 +434,33 @@ export function ContributeFlowModal({
     ],
   );
 
-  const stepIndex = step === "amount" ? 0 : step === "waiting" ? 1 : 2;
+  const stepIndex =
+    step === "amount"
+      ? 0
+      : entryPoint === "already-contributed"
+        ? 1
+        : step === "waiting"
+          ? 1
+          : 2;
+  const customAmountIsValid =
+    customAmount.trim() === "" || parseContributionAmount(customAmount) !== null;
 
   return (
     <ModalSheet
       open={open}
       onClose={onClose}
-      title={stepTitle(step, target)}
+      title={stepTitle(step, target, entryPoint)}
       dismissible={!busy}
       footer={
         <ModalFooter
           step={step}
           busy={busy}
           amountCents={amountCents}
+          amountIsValid={customAmountIsValid}
+          entryPoint={entryPoint}
+          evidenceMethod={evidenceMethod}
           onContribute={handleContribute}
+          onContinueAlready={handleAlreadyContributed}
           onConfirm={() => submitConfirmation(false)}
           onDecline={() => submitConfirmation(true)}
           onDone={onClose}
@@ -304,7 +470,9 @@ export function ContributeFlowModal({
         />
       }
     >
-      {step !== "done" && <StepIndicator current={stepIndex} />}
+      {step !== "done" && (
+        <StepIndicator current={stepIndex} entryPoint={entryPoint} />
+      )}
 
       {error && error !== "popup-blocked" && (
         <div
@@ -322,6 +490,7 @@ export function ContributeFlowModal({
           onSelect={setAmountCents}
           customAmount={customAmount}
           onCustomAmount={setCustomAmount}
+          entryPoint={entryPoint}
         />
       )}
 
@@ -337,6 +506,7 @@ export function ContributeFlowModal({
       {step === "confirm" && (
         <ConfirmStep
           target={target}
+          entryPoint={entryPoint}
           attestationVersion={attestationVersion}
           amountCents={amountCents}
           editingAmount={editingAmount}
@@ -345,17 +515,50 @@ export function ContributeFlowModal({
             setConfirmedText((amountCents / 100).toFixed(2));
           }}
           confirmedText={confirmedText}
-          onConfirmedText={setConfirmedText}
-          receipt={receipt}
-          onReceipt={(nextReceipt) => {
-            setReceipt(nextReceipt);
-            setUploadedReceiptKey(null);
+          onConfirmedText={(value) => {
+            setConfirmedText(value);
+            setReceiptEvidenceToken(null);
             setReceiptOutcome("not-requested");
+          }}
+          receipt={receipt}
+          evidenceMethod={evidenceMethod}
+          receiptOutcome={receiptOutcome}
+          receiptReviewAvailable={receiptReviewAvailable}
+          onEvidenceMethod={(method) => {
+            setEvidenceMethod(method);
+            setEvidenceError(null);
+            if (method === "self-reported") {
+              setReceipt(null);
+              receiptFileRef.current = null;
+              setReceiptEvidenceToken(null);
+              setReceiptOutcome("not-requested");
+              setReceiptAiConsent(false);
+            } else {
+              setReceiptEvidenceToken(null);
+              setReceiptOutcome("not-requested");
+            }
+          }}
+          evidenceError={evidenceError}
+          receiptAiConsent={receiptAiConsent}
+          onReceiptAiConsent={(consented) => {
+            setReceiptAiConsent(consented);
+            if (consented) setEvidenceError(null);
+          }}
+          onReceipt={(nextReceipt) => {
+            const isNewImage = receiptFileRef.current !== nextReceipt.file;
+            receiptFileRef.current = nextReceipt.file;
+            setReceipt(nextReceipt);
+            setReceiptEvidenceToken(null);
+            setReceiptOutcome("not-requested");
+            setEvidenceError(null);
+            if (isNewImage) setReceiptAiConsent(false);
           }}
           onClearReceipt={() => {
             setReceipt(null);
-            setUploadedReceiptKey(null);
+            receiptFileRef.current = null;
+            setReceiptEvidenceToken(null);
             setReceiptOutcome("not-requested");
+            setReceiptAiConsent(false);
           }}
           attested={attested}
           onAttested={(v) => {
@@ -377,22 +580,39 @@ export function ContributeFlowModal({
   );
 }
 
-function stepTitle(step: Step, target: TargetView): string {
+function stepTitle(
+  step: Step,
+  target: TargetView,
+  entryPoint: ContributionEntryPoint,
+): string {
   switch (step) {
     case "amount":
-      return `Contribute to ${target.candidate.fullName}`;
+      return entryPoint === "already-contributed"
+        ? "Add a contribution you already made"
+        : `Contribute to ${target.candidate.fullName}`;
     case "waiting":
       return "Finish on the donation page";
     case "confirm":
-      return "Did you complete your contribution?";
+      return entryPoint === "already-contributed"
+        ? `Confirm your contribution to ${target.candidate.fullName}`
+        : "Did you complete your contribution?";
     case "done":
       return "Thank you";
   }
 }
 
 /** Always-visible progress through the flow, so nobody feels lost mid-handoff. */
-function StepIndicator({ current }: { current: number }) {
-  const steps = ["Amount", "Donate", "Confirm"];
+function StepIndicator({
+  current,
+  entryPoint,
+}: {
+  current: number;
+  entryPoint: ContributionEntryPoint;
+}) {
+  const steps =
+    entryPoint === "already-contributed"
+      ? ["Amount", "Confirm"]
+      : ["Amount", "Donate", "Confirm"];
   return (
     <ol
       className="mb-4 flex items-center gap-2"
@@ -440,22 +660,37 @@ function AmountStep({
   onSelect,
   customAmount,
   onCustomAmount,
+  entryPoint,
 }: {
   target: TargetView;
   amountCents: number;
   onSelect: (cents: number) => void;
   customAmount: string;
   onCustomAmount: (value: string) => void;
+  entryPoint: ContributionEntryPoint;
 }) {
   const isCustom = !target.suggestedAmounts.includes(amountCents);
+  const parsedCustomAmount = parseContributionAmount(customAmount);
+  const customAmountIsInvalid =
+    customAmount.trim() !== "" && parsedCustomAmount === null;
 
   return (
     <div className="space-y-4 pb-2">
       <div>
         <p className="text-sm text-ink-600">
-          Choose an amount. You&rsquo;ll complete the contribution on{" "}
-          {platformLabel(target.candidate.platform)}, then come back here and
-          we&rsquo;ll add it to the total.
+          {entryPoint === "already-contributed" ? (
+            <>
+              Enter the amount you already gave to{" "}
+              {target.candidate.fullName}. On the next step, you can add it as
+              self-reported or attach a receipt.
+            </>
+          ) : (
+            <>
+              Choose an amount. You&rsquo;ll complete the contribution on{" "}
+              {platformLabel(target.candidate.platform)}, then come back here
+              and we&rsquo;ll add it to the total.
+            </>
+          )}
         </p>
       </div>
 
@@ -506,26 +741,51 @@ function AmountStep({
             className="pl-8"
             value={customAmount}
             invalid={
-              Boolean(customAmount) && parseAmountToCents(customAmount) === null
+              customAmountIsInvalid
+            }
+            aria-describedby={
+              customAmountIsInvalid ? "custom-amount-error" : undefined
             }
             onChange={(e) => {
               onCustomAmount(e.target.value);
-              const cents = parseAmountToCents(e.target.value);
+              const cents = parseContributionAmount(e.target.value);
               if (cents !== null) onSelect(cents);
             }}
           />
         </div>
-        {isCustom && parseAmountToCents(customAmount) !== null && (
+        {customAmountIsInvalid && (
+          <p
+            id="custom-amount-error"
+            role="alert"
+            className="mt-1.5 text-xs font-medium text-red-700"
+          >
+            Enter an amount from $0.01 to $100,000.
+          </p>
+        )}
+        {isCustom && parsedCustomAmount !== null && (
           <p className="mt-1.5 text-xs text-ink-500">
             Contributing {formatCents(amountCents)}
           </p>
         )}
       </div>
 
-      <HandoffNotice
-        platform={target.candidate.platform}
-        committeeName={target.candidate.committeeName}
-      />
+      {entryPoint === "already-contributed" ? (
+        <div
+          role="note"
+          className="rounded-xl bg-brand-50 p-3.5 text-sm leading-relaxed text-brand-950 ring-1 ring-inset ring-brand-200"
+        >
+          <span className="font-semibold">Nothing will be charged.</span> This
+          only adds a contribution you already completed to this drive&rsquo;s
+          progress. An earlier contribution may not carry this drive&rsquo;s
+          tracking tag, so the committee&rsquo;s processor may not attribute it
+          to the drive.
+        </div>
+      ) : (
+        <HandoffNotice
+          platform={target.candidate.platform}
+          committeeName={target.candidate.committeeName}
+        />
+      )}
     </div>
   );
 }
@@ -589,6 +849,7 @@ function WaitingStep({
 
 function ConfirmStep({
   target,
+  entryPoint,
   attestationVersion,
   amountCents,
   editingAmount,
@@ -596,6 +857,13 @@ function ConfirmStep({
   confirmedText,
   onConfirmedText,
   receipt,
+  evidenceMethod,
+  receiptOutcome,
+  receiptReviewAvailable,
+  onEvidenceMethod,
+  evidenceError,
+  receiptAiConsent,
+  onReceiptAiConsent,
   onReceipt,
   onClearReceipt,
   attested,
@@ -603,6 +871,7 @@ function ConfirmStep({
   attestError,
 }: {
   target: TargetView;
+  entryPoint: ContributionEntryPoint;
   attestationVersion: string;
   amountCents: number;
   editingAmount: boolean;
@@ -610,6 +879,13 @@ function ConfirmStep({
   confirmedText: string;
   onConfirmedText: (v: string) => void;
   receipt: ReceiptResult | null;
+  evidenceMethod: EvidenceMethod;
+  receiptOutcome: ReceiptOutcome;
+  receiptReviewAvailable: boolean;
+  onEvidenceMethod: (method: EvidenceMethod) => void;
+  evidenceError: string | null;
+  receiptAiConsent: boolean;
+  onReceiptAiConsent: (consented: boolean) => void;
   onReceipt: (r: ReceiptResult) => void;
   onClearReceipt: () => void;
   attested: boolean;
@@ -620,13 +896,25 @@ function ConfirmStep({
     receipt?.ocrAmountCents && receipt.ocrAmountCents !== amountCents
       ? receipt.ocrAmountCents
       : null;
+  const confirmedAmountIsInvalid =
+    editingAmount && parseContributionAmount(confirmedText) === null;
 
   return (
     <div className="space-y-4 pb-2">
       <p className="text-sm text-ink-600">
-        Tell us what happened so we can update {target.coalition.name}&rsquo;s
-        progress. This is the only way the total moves — we have no access to{" "}
-        {platformLabel(target.candidate.platform)}&rsquo;s records.
+        {entryPoint === "already-contributed" ? (
+          <>
+            Add what you already gave to {target.coalition.name}&rsquo;s
+            progress. Choose self-report for the fastest path, or attach a
+            receipt as supporting evidence.
+          </>
+        ) : (
+          <>
+            Tell us what happened so we can update{" "}
+            {target.coalition.name}&rsquo;s progress. We have no access to{" "}
+            {platformLabel(target.candidate.platform)}&rsquo;s records.
+          </>
+        )}
       </p>
 
       {!editingAmount ? (
@@ -663,13 +951,24 @@ function ConfirmStep({
               autoFocus
               className="pl-8"
               value={confirmedText}
-              invalid={
-                Boolean(confirmedText) &&
-                parseAmountToCents(confirmedText) === null
+              invalid={confirmedAmountIsInvalid}
+              aria-describedby={
+                confirmedAmountIsInvalid
+                  ? "confirmed-amount-error"
+                  : undefined
               }
               onChange={(e) => onConfirmedText(e.target.value)}
             />
           </div>
+          {confirmedAmountIsInvalid && (
+            <p
+              id="confirmed-amount-error"
+              role="alert"
+              className="mt-1.5 text-xs font-medium text-red-700"
+            >
+              Enter an amount from $0.01 to $100,000.
+            </p>
+          )}
           {ocrSuggestion && (
             <button
               type="button"
@@ -682,14 +981,109 @@ function ConfirmStep({
         </div>
       )}
 
-      {isSupabaseConfigured && (
-        <>
-          <ReceiptDropzone onResult={onReceipt} onClear={onClearReceipt} />
-          <p className="text-xs text-ink-500">
-            A receipt moves your contribution into the receipt-backed part of the
-            progress bar. Without one it still counts, just as self-reported.
+      {(receiptOutcome === "needs-review" ||
+        receiptOutcome === "unavailable") && (
+        <div
+          role="status"
+          className="rounded-xl bg-amber-50 p-3.5 text-sm leading-relaxed text-amber-950 ring-1 ring-inset ring-amber-200"
+        >
+          <p className="font-semibold">
+            {receiptOutcome === "needs-review"
+              ? "We couldn’t confidently match that receipt."
+              : "The optional receipt check is unavailable right now."}
           </p>
-        </>
+          <p className="mt-1 text-xs text-amber-900">
+            Nothing has been added yet. Use the selected self-report option
+            below, or choose AI-check a receipt again to try another image.
+          </p>
+        </div>
+      )}
+
+      <fieldset
+        className="space-y-2"
+        aria-describedby={evidenceError ? "receipt-evidence-error" : undefined}
+      >
+        <legend className="text-sm font-semibold text-ink-800">
+          How should this contribution be shown?
+        </legend>
+
+        <EvidenceChoice
+          value="self-reported"
+          selected={evidenceMethod === "self-reported"}
+          title="Self-report"
+          description="Fastest. Adds the amount to the clearly labeled self-reported total."
+          onSelect={onEvidenceMethod}
+        />
+
+        <EvidenceChoice
+          value="receipt-backed"
+          selected={evidenceMethod === "receipt-backed"}
+          title="AI-check a receipt"
+          description={
+            receiptReviewAvailable
+              ? "Optional. Checks whether the visible receipt details match this contribution."
+              : "Not available yet. You can still add this contribution as self-reported."
+          }
+          disabled={!receiptReviewAvailable}
+          onSelect={onEvidenceMethod}
+        />
+      </fieldset>
+
+      {evidenceMethod === "receipt-backed" && (
+        <div className="space-y-2 rounded-xl bg-ink-50 p-3.5 ring-1 ring-inset ring-ink-200">
+          <p className="text-xs leading-relaxed text-ink-600">
+            Before uploading, crop or cover your address, email, and card
+            digits. We only need the committee name, amount, and date. A
+            receipt is supporting evidence; it does not confirm the
+            contribution against campaign records.
+          </p>
+          <ReceiptDropzone onResult={onReceipt} onClear={onClearReceipt} />
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-white p-3 ring-1 ring-inset ring-ink-200">
+            <input
+              type="checkbox"
+              checked={receiptAiConsent}
+              onChange={(event) =>
+                onReceiptAiConsent(event.currentTarget.checked)
+              }
+              aria-describedby="receipt-ai-consent-description receipt-retention-disclosure"
+              className="mt-0.5 size-5 shrink-0 rounded accent-brand-700"
+            />
+            <span
+              id="receipt-ai-consent-description"
+              className="text-xs leading-relaxed text-ink-700"
+            >
+              I agree to send this image to OpenAI for an optional AI receipt
+              check. I understand that an AI match is not confirmation from
+              the campaign or payment processor.
+            </span>
+          </label>
+          <p
+            id="receipt-retention-disclosure"
+            className="text-xs leading-relaxed text-ink-600"
+          >
+            Capital Ark does not store the raw image. OpenAI may retain it in
+            abuse-monitoring logs for up to 30 days unless Zero Data Retention
+            applies.{" "}
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-900"
+            >
+              Read the privacy details
+            </a>
+            .
+          </p>
+          {evidenceError && (
+            <p
+              id="receipt-evidence-error"
+              role="alert"
+              className="text-xs font-medium text-red-700"
+            >
+              {evidenceError}
+            </p>
+          )}
+        </div>
       )}
 
       <AttestationCheckbox
@@ -699,6 +1093,53 @@ function ConfirmStep({
         error={attestError}
       />
     </div>
+  );
+}
+
+function EvidenceChoice({
+  value,
+  selected,
+  title,
+  description,
+  disabled = false,
+  onSelect,
+}: {
+  value: EvidenceMethod;
+  selected: boolean;
+  title: string;
+  description: string;
+  disabled?: boolean;
+  onSelect: (method: EvidenceMethod) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex min-h-16 items-start gap-3 rounded-xl p-3.5 ring-1 ring-inset transition-colors",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+        selected
+          ? "bg-brand-50 ring-brand-500"
+          : "bg-white ring-ink-200",
+        !selected && !disabled && "hover:bg-ink-50",
+      )}
+    >
+      <input
+        type="radio"
+        name="contribution-evidence"
+        value={value}
+        checked={selected}
+        disabled={disabled}
+        onChange={() => onSelect(value)}
+        className="mt-0.5 size-5 shrink-0 accent-brand-700"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-ink-900">
+          {title}
+        </span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-ink-600">
+          {description}
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -742,11 +1183,15 @@ function DoneStep({
         <p className="mt-1 text-sm text-ink-600">
           Thanks for backing {target.candidate.fullName} with{" "}
           {target.coalition.name}.
-          {receiptOutcome === "stored"
-            ? " Your receipt was attached and puts this in the receipt-backed segment."
-            : receiptOutcome === "failed"
-              ? " We couldn't attach your receipt, so this counts as self-reported."
-              : " This counts as self-reported."}
+          {receiptOutcome === "ai-checked"
+            ? " Your receipt was AI-checked and matched the visible contribution details, so this appears as receipt-backed. It is not confirmation from campaign records."
+            : receiptOutcome === "receipt-attached"
+              ? " Your receipt was attached, so this appears as receipt-backed. It is not confirmation from campaign records."
+            : receiptOutcome === "needs-review"
+              ? " The receipt could not be confidently matched, so this counts as self-reported."
+              : receiptOutcome === "unavailable"
+                ? " The optional receipt check was unavailable, so this counts as self-reported."
+                : " This counts as self-reported."}
         </p>
       </div>
 
@@ -776,7 +1221,11 @@ function ModalFooter({
   step,
   busy,
   amountCents,
+  amountIsValid,
+  entryPoint,
+  evidenceMethod,
   onContribute,
+  onContinueAlready,
   onConfirm,
   onDecline,
   onDone,
@@ -787,7 +1236,11 @@ function ModalFooter({
   step: Step;
   busy: boolean;
   amountCents: number;
+  amountIsValid: boolean;
+  entryPoint: ContributionEntryPoint;
+  evidenceMethod: EvidenceMethod;
   onContribute: () => void;
+  onContinueAlready: () => void;
   onConfirm: () => void;
   onDecline: () => void;
   onDone: () => void;
@@ -797,8 +1250,20 @@ function ModalFooter({
 }) {
   if (step === "amount") {
     return (
-      <Button size="lg" fullWidth loading={busy} onClick={onContribute}>
-        Contribute {formatCentsShort(amountCents)}
+      <Button
+        size="lg"
+        fullWidth
+        loading={busy}
+        disabled={!amountIsValid}
+        onClick={
+          entryPoint === "already-contributed"
+            ? onContinueAlready
+            : onContribute
+        }
+      >
+        {entryPoint === "already-contributed"
+          ? `Continue with ${formatCentsShort(amountCents)}`
+          : `Contribute ${formatCentsShort(amountCents)}`}
       </Button>
     );
   }
@@ -830,7 +1295,9 @@ function ModalFooter({
           loading={busy}
           onClick={onConfirm}
         >
-          Yes, I contributed
+          {evidenceMethod === "receipt-backed"
+            ? "Check receipt and add"
+            : "Add as self-reported"}
         </Button>
         <Button
           size="sm"
@@ -839,7 +1306,9 @@ function ModalFooter({
           disabled={busy}
           onClick={onDecline}
         >
-          I didn&rsquo;t contribute
+          {entryPoint === "already-contributed"
+            ? "Cancel — don’t add it"
+            : "I didn’t contribute"}
         </Button>
       </div>
     );
@@ -852,35 +1321,65 @@ function ModalFooter({
   );
 }
 
-/**
- * Uploads the receipt straight to storage and returns its object key.
- *
- * Returns null on any failure: a receipt is a nice-to-have, and losing one
- * must never block the user from recording that they contributed.
- */
-async function uploadReceipt(
-  pledgeId: string,
-  receipt: ReceiptResult,
-): Promise<string | null> {
+function parseContributionAmount(input: string): number | null {
+  const cents = parseAmountToCents(input);
+  return cents !== null && cents <= MAX_CONTRIBUTION_CENTS ? cents : null;
+}
+
+function receiptOutcomeFromEvidenceType(value: unknown): ReceiptOutcome {
+  if (value === "RECEIPT_AI_CHECKED") return "ai-checked";
+  if (value === "RECEIPT_ATTACHED") return "receipt-attached";
+  if (value === "SELF_REPORTED") return "not-requested";
+  // Null and unknown future values fail closed to the least-trusting public
+  // description.
+  return "not-requested";
+}
+
+async function checkReceipt({
+  pledgeId,
+  confirmedAmountCents,
+  receipt,
+}: {
+  pledgeId: string;
+  confirmedAmountCents: number;
+  receipt: ReceiptResult;
+}): Promise<{
+  outcome: ReceiptOutcome;
+  evidenceToken: string | null;
+}> {
   try {
-    const res = await fetch("/api/receipts/upload-url", {
+    const formData = new FormData();
+    formData.set("pledgeId", pledgeId);
+    formData.set("confirmedAmountCents", String(confirmedAmountCents));
+    formData.set("consent", "true");
+    formData.set("receipt", receipt.file);
+
+    const res = await fetch("/api/receipts/verify", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pledgeId, contentType: receipt.file.type }),
+      body: formData,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return { outcome: "unavailable", evidenceToken: null };
+    }
 
     const payload = await res.json();
-    if (!payload.uploadUrl) return null;
-
-    const upload = await fetch(payload.uploadUrl, {
-      method: "PUT",
-      body: receipt.file,
-      headers: { "content-type": receipt.file.type },
-    });
-
-    return upload.ok ? payload.objectKey : null;
+    if (
+      payload?.status === "ai_checked" &&
+      payload?.receiptBacked === true &&
+      typeof payload?.evidenceToken === "string"
+    ) {
+      return {
+        outcome: "ai-checked",
+        evidenceToken: payload.evidenceToken,
+      };
+    }
+    if (payload?.status === "needs_review") {
+      return { outcome: "needs-review", evidenceToken: null };
+    }
+    return { outcome: "unavailable", evidenceToken: null };
   } catch {
-    return null;
+    // Receipt analysis is optional. A provider/network failure must never
+    // strand a contributor; confirmation continues as self-reported.
+    return { outcome: "unavailable", evidenceToken: null };
   }
 }

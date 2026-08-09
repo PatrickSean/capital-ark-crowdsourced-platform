@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { isDemoMode, store } from "@/lib/data";
 import { getSessionUser } from "@/lib/auth/session";
-import { isSupabaseConfigured } from "@/lib/auth/config";
 import { absoluteUrl } from "@/lib/site";
 import { formatCentsShort } from "@/lib/money";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -66,7 +65,7 @@ export default async function CoalitionPage({
 
   const [targets, activity, user] = await Promise.all([
     store.listTargetsForCoalition(coalition.id),
-    store.listActivity(coalition.id, 12),
+    store.listActivity(coalition.id, 6),
     getSessionUser(),
   ]);
 
@@ -135,16 +134,15 @@ export default async function CoalitionPage({
 
         <section
           aria-label="Coalition totals"
-          className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4"
+          className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
         >
           <Stat label="Raised" value={formatCentsShort(totals.raised)} emphasis />
           <Stat label="Combined goal" value={formatCentsShort(totals.goal)} />
           <Stat
-            label={isSupabaseConfigured ? "Receipt-backed" : "Self-reported"}
-            value={formatCentsShort(
-              isSupabaseConfigured ? totals.verified : totals.attested,
-            )}
+            label="Receipt-backed"
+            value={formatCentsShort(totals.verified)}
           />
+          <Stat label="Self-reported" value={formatCentsShort(totals.attested)} />
           <Stat label="Active drives" value={String(targets.length)} />
         </section>
 
@@ -153,14 +151,10 @@ export default async function CoalitionPage({
           candidates={targets.map((t) => t.candidate)}
         />
 
-        <div
-          className={`mt-8 grid gap-6 ${
-            activity.length > 0 ? "lg:grid-cols-3" : ""
-          }`}
-        >
+        <div className="mt-8 grid gap-6 lg:grid-cols-3">
           <section
             aria-label="Fundraising drives"
-            className={activity.length > 0 ? "space-y-5 lg:col-span-2" : "space-y-5"}
+            className="space-y-5 lg:col-span-2"
           >
             <h2 className="text-sm font-bold tracking-tight text-ink-900">
               Fundraising drives
@@ -173,13 +167,7 @@ export default async function CoalitionPage({
                 </p>
               </Card>
             ) : (
-              <div
-                className={
-                  activity.length > 0
-                    ? "space-y-5"
-                    : "grid gap-5 md:grid-cols-2"
-                }
-              >
+              <div className="space-y-5">
                 {targets.map((target) => (
                   <TargetCandidateCard key={target.id} target={target} />
                 ))}
@@ -187,13 +175,11 @@ export default async function CoalitionPage({
             )}
           </section>
 
-          {activity.length > 0 && (
-            <aside className="lg:col-span-1">
-              <div className="lg:sticky lg:top-24">
-                <ActivityFeed items={activity} />
-              </div>
-            </aside>
-          )}
+          <aside className="order-first lg:order-none lg:col-span-1">
+            <div className="lg:sticky lg:top-24">
+              <ActivityFeed items={activity} />
+            </div>
+          </aside>
         </div>
       </main>
 

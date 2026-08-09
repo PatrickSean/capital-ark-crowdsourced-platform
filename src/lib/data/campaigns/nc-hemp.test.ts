@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Jurisdiction, Party } from "@/generated/prisma/enums";
-import { hempCandidates, hempOrganizer, hempTargets } from "./nc-hemp";
+import {
+  hempCandidates,
+  hempCoalition,
+  hempLaunchActivityIds,
+  hempOrganizer,
+  hempTargets,
+} from "./nc-hemp";
 
 const expected = [
   ["Destin Hall", "House District 87", Party.REPUBLICAN, 150_000],
@@ -31,6 +37,23 @@ describe("verified NC Hemp fundraising slate", () => {
       });
       expect(hempTargets[index]?.goalCents).toBe(goalDollars * 100);
     });
+  });
+
+  it("welcomes consumers with accessible individual contribution defaults", () => {
+    expect(hempCoalition.description).toMatch(/hemp consumers/i);
+    for (const target of hempTargets) {
+      expect(target.suggestedAmounts).toEqual([
+        2_500,
+        5_000,
+        10_000,
+        25_000,
+      ]);
+    }
+  });
+
+  it("reserves one stable launch-history event id for each target", () => {
+    expect(hempLaunchActivityIds).toHaveLength(hempTargets.length);
+    expect(new Set(hempLaunchActivityIds).size).toBe(hempTargets.length);
   });
 
   it("stores current committee and government identifiers", () => {

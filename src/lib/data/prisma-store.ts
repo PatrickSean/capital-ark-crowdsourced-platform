@@ -3,7 +3,9 @@ import "server-only";
 import {
   ActivityType,
   CoalitionVerificationStatus,
+  ContributionEvidenceType,
   PledgeStatus,
+  ReceiptCheckStatus,
   TargetStatus,
 } from "@/generated/prisma/enums";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
@@ -23,9 +25,14 @@ import type {
   CreateCoalitionInput,
   CreatePledgeInput,
   LogClickInput,
+  ReceiptReviewInput,
   Store,
   UserPatch,
 } from "./store-types";
+import {
+  IdempotencyConflictError,
+  ReceiptEvidenceReuseError,
+} from "./errors";
 
 type CoalitionRow = {
   id: string;
@@ -172,6 +179,8 @@ function toPledgeView(row: {
   status: PledgeStatus;
   trackingTagUsed: string;
   receiptUrl: string | null;
+  evidenceType: ContributionEvidenceType | null;
+  receiptCheckStatus: ReceiptCheckStatus;
   createdAt: Date;
 }): PledgeView {
   return {
@@ -183,7 +192,65 @@ function toPledgeView(row: {
     status: row.status,
     trackingTagUsed: row.trackingTagUsed,
     receiptUrl: row.receiptUrl,
+    evidenceType: row.evidenceType,
+    receiptCheckStatus: row.receiptCheckStatus,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function idempotentPledge(
+  row: Parameters<typeof toPledgeView>[0],
+  input: CreatePledgeInput,
+): PledgeView {
+  if (
+    row.targetId !== input.targetId ||
+    row.amountCents !== input.amountCents
+  ) {
+    throw new IdempotencyConflictError();
+  }
+  return toPledgeView(row);
+}
+
+function receiptReviewData(input: ReceiptReviewInput) {
+  return {
+    receiptCheckStatus: input.status,
+    receiptCheckModel: input.model ?? null,
+    receiptCheckedAt: input.checkedAt,
+    receiptExtractedAmountCents: input.extractedAmountCents ?? null,
+    receiptContributionDate: input.contributionDate ?? null,
+    receiptCandidateMatched: input.candidateMatched ?? null,
+    receiptCommitteeMatched: input.committeeMatched ?? null,
+    receiptAmountMatched: input.amountMatched ?? null,
+    receiptProcessorMatched: input.processorMatched ?? null,
+    receiptDatePlausible: input.datePlausible ?? null,
+    receiptCheckReasons: input.reasons,
+  };
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "P2002",
+  );
+}
+
+type ActivityWithTarget = Prisma.ActivityEventGetPayload<{
+  include: { target: { include: { candidate: true } } };
+}>;
+
+function toActivityItem(activity: ActivityWithTarget): ActivityItem {
+  return {
+    id: activity.id,
+    type: activity.type,
+    evidenceType: activity.evidenceType,
+    amountCents: activity.amountCents,
+    message: activity.message,
+    createdAt: activity.createdAt.toISOString(),
+    targetTitle: activity.target?.title ?? null,
+    targetSlug: activity.target?.slug ?? null,
+    candidateName: activity.target?.candidate?.fullName ?? null,
   };
 }
 
@@ -337,36 +404,69 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       const rows = await prisma.activityEvent.findMany({
         where: { coalitionId },
         include: { target: { include: { candidate: true } } },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take: limit,
       });
 
-      return rows.map<ActivityItem>((a) => ({
-        id: a.id,
-        type: a.type,
-        actorLabel: a.actorLabel,
-        amountCents: a.amountCents,
-        message: a.message,
-        createdAt: a.createdAt.toISOString(),
-        targetTitle: a.target?.title ?? null,
-        candidateName: a.target?.candidate?.fullName ?? null,
-      }));
+      return rows.map(toActivityItem);
+    },
+
+    async listActivityForTarget(targetId, limit = 20) {
+      const rows = await prisma.activityEvent.findMany({
+        where: { targetId },
+        include: { target: { include: { candidate: true } } },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        take: limit,
+      });
+
+      return rows.map(toActivityItem);
     },
 
     async createPledge(input: CreatePledgeInput) {
-      const row = await prisma.pledge.create({
-        data: {
-          userId: input.userId,
-          targetId: input.targetId,
-          amountCents: input.amountCents,
-          trackingTagUsed: input.trackingTag,
-          isAnonymousAtPledge: input.isAnonymous,
-          ipHash: input.ipHash ?? null,
-          userAgent: input.userAgent ?? null,
-          status: PledgeStatus.PENDING,
-        },
-      });
-      return toPledgeView(row);
+      if (input.clientRequestId) {
+        const existing = await prisma.pledge.findUnique({
+          where: {
+            userId_clientRequestId: {
+              userId: input.userId,
+              clientRequestId: input.clientRequestId,
+            },
+          },
+        });
+        if (existing) return idempotentPledge(existing, input);
+      }
+
+      try {
+        const row = await prisma.pledge.create({
+          data: {
+            userId: input.userId,
+            targetId: input.targetId,
+            amountCents: input.amountCents,
+            trackingTagUsed: input.trackingTag,
+            isAnonymousAtPledge: input.isAnonymous,
+            ipHash: input.ipHash ?? null,
+            userAgent: input.userAgent ?? null,
+            clientRequestId: input.clientRequestId ?? null,
+            status: PledgeStatus.PENDING,
+          },
+        });
+        return toPledgeView(row);
+      } catch (error) {
+        if (!input.clientRequestId || !isUniqueConstraintError(error)) {
+          throw error;
+        }
+        // A simultaneous retry may win the unique-key race. Fetch and return
+        // that row only when every request-defining field is identical.
+        const existing = await prisma.pledge.findUnique({
+          where: {
+            userId_clientRequestId: {
+              userId: input.userId,
+              clientRequestId: input.clientRequestId,
+            },
+          },
+        });
+        if (!existing) throw error;
+        return idempotentPledge(existing, input);
+      }
     },
 
     async getPledge(pledgeId) {
@@ -390,11 +490,24 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       };
     },
 
+    async recordReceiptReview(input) {
+      const updated = await prisma.pledge.updateMany({
+        where: {
+          id: input.pledgeId,
+          userId: input.userId,
+          status: PledgeStatus.PENDING,
+        },
+        data: receiptReviewData(input),
+      });
+      return updated.count === 1;
+    },
+
     async confirmPledge(input: ConfirmPledgeInput) {
-      return prisma.$transaction(async (tx) => {
+      try {
+        return await prisma.$transaction(async (tx) => {
         const existing = await tx.pledge.findUnique({
           where: { id: input.pledgeId },
-          include: { target: true, user: true },
+          include: { target: true },
         });
 
         if (!existing || existing.userId !== input.userId) return null;
@@ -408,11 +521,29 @@ export function createPrismaStore(prisma: PrismaClient): Store {
 
         const confirmedAmountCents =
           input.confirmedAmountCents ?? existing.amountCents;
+        const evidenceType = input.declined
+          ? null
+          : (input.evidenceType ??
+            (input.receiptUrl
+              ? ContributionEvidenceType.RECEIPT_ATTACHED
+              : ContributionEvidenceType.SELF_REPORTED));
         const status = input.declined
           ? PledgeStatus.DECLINED
-          : input.receiptUrl
+          : evidenceType === ContributionEvidenceType.RECEIPT_ATTACHED ||
+              evidenceType === ContributionEvidenceType.RECEIPT_AI_CHECKED
             ? PledgeStatus.COMPLETED
             : PledgeStatus.UNVERIFIED;
+
+        if (input.receiptEvidence) {
+          const duplicate = await tx.pledge.findFirst({
+            where: {
+              receiptEvidenceHash: input.receiptEvidence.evidenceHash,
+              NOT: { id: input.pledgeId },
+            },
+            select: { id: true },
+          });
+          if (duplicate) throw new ReceiptEvidenceReuseError();
+        }
 
         const claimed = await tx.pledge.updateMany({
           where: {
@@ -426,6 +557,14 @@ export function createPrismaStore(prisma: PrismaClient): Store {
                 confirmedAmountCents,
                 ocrAmountCents: input.ocrAmountCents ?? null,
                 receiptUrl: input.receiptUrl ?? null,
+                evidenceType,
+                ...(input.receiptEvidence
+                  ? {
+                      ...receiptReviewData(input.receiptEvidence),
+                      receiptEvidenceHash:
+                        input.receiptEvidence.evidenceHash,
+                    }
+                  : {}),
                 status,
                 attestedAt: new Date(),
                 attestationVersion: input.attestationVersion,
@@ -444,11 +583,8 @@ export function createPrismaStore(prisma: PrismaClient): Store {
             data: {
               coalitionId: existing.target.coalitionId,
               targetId: existing.targetId,
-              actorId: existing.userId,
               type: ActivityType.PLEDGE_CONFIRMED,
-              actorLabel: existing.isAnonymousAtPledge
-                ? "Someone"
-                : (existing.user.displayName ?? "A supporter"),
+              evidenceType,
               amountCents: confirmedAmountCents,
             },
           });
@@ -458,7 +594,16 @@ export function createPrismaStore(prisma: PrismaClient): Store {
           where: { id: input.pledgeId },
         });
         return updated ? toPledgeView(updated) : null;
-      });
+        });
+      } catch (error) {
+        if (
+          error instanceof ReceiptEvidenceReuseError ||
+          (input.receiptEvidence && isUniqueConstraintError(error))
+        ) {
+          throw new ReceiptEvidenceReuseError();
+        }
+        throw error;
+      }
     },
 
     async listResumablePledges(userId) {

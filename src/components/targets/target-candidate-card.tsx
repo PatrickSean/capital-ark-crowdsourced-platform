@@ -4,6 +4,7 @@ import { LayeredProgressBar } from "./layered-progress-bar";
 import { ContributeButton } from "@/components/contribute/contribute-button";
 import { DeadlinePill } from "./deadline-pill";
 import type { TargetView } from "@/lib/domain/types";
+import { isAiReceiptReviewConfigured } from "@/lib/receipts/config";
 
 /**
  * A single fundraising drive.
@@ -14,6 +15,9 @@ import type { TargetView } from "@/lib/domain/types";
  */
 export function TargetCandidateCard({ target }: { target: TargetView }) {
   const { candidate, progress } = target;
+  const receiptReviewAvailable =
+    isAiReceiptReviewConfigured() &&
+    Boolean(target.candidate.donationUrlVerifiedAt);
 
   return (
     <Card className="flex h-full flex-col gap-5 p-5">
@@ -73,7 +77,11 @@ export function TargetCandidateCard({ target }: { target: TargetView }) {
       </div>
 
       <div className="mt-auto">
-        <ContributeButton target={target} compactPendingState />
+        <ContributeButton
+          target={target}
+          compactPendingState
+          receiptReviewAvailable={receiptReviewAvailable}
+        />
       </div>
     </Card>
   );

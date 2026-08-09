@@ -10,21 +10,25 @@
 export {
   ActivityType,
   CoalitionVerificationStatus,
+  ContributionEvidenceType,
   Jurisdiction,
   MemberRole,
   Party,
   Platform,
   PledgeStatus,
+  ReceiptCheckStatus,
   TargetStatus,
 } from "@/generated/prisma/enums";
 
 import type {
   ActivityType,
   CoalitionVerificationStatus,
+  ContributionEvidenceType,
   Jurisdiction,
   Party,
   Platform,
   PledgeStatus,
+  ReceiptCheckStatus,
 } from "@/generated/prisma/enums";
 
 export interface CandidateView {
@@ -75,7 +79,7 @@ export interface CoalitionView {
  */
 export interface ProgressSnapshot {
   goalCents: number;
-  /** Receipt attached or admin-verified. */
+  /** Receipt-backed, not confirmation from committee records. */
   confirmedCents: number;
   /** Self-attested, no receipt. */
   attestedCents: number;
@@ -105,11 +109,12 @@ export interface TargetView {
 export interface ActivityItem {
   id: string;
   type: ActivityType;
-  actorLabel: string | null;
+  evidenceType: ContributionEvidenceType | null;
   amountCents: number | null;
   message: string | null;
   createdAt: string;
   targetTitle: string | null;
+  targetSlug: string | null;
   candidateName: string | null;
 }
 
@@ -122,6 +127,8 @@ export interface PledgeView {
   status: PledgeStatus;
   trackingTagUsed: string;
   receiptUrl: string | null;
+  evidenceType: ContributionEvidenceType | null;
+  receiptCheckStatus: ReceiptCheckStatus;
   createdAt: string;
 }
 

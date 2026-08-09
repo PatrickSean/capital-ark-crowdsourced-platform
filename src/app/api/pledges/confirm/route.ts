@@ -8,6 +8,14 @@ import { LIMITS, rateLimit } from "@/lib/api/rate-limit";
 import { attestationVersionFor } from "@/lib/compliance/attestations";
 import { isReceiptObjectKeyFor } from "@/lib/receipt-key";
 import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
+import {
+  ContributionEvidenceType,
+  ReceiptCheckStatus,
+} from "@/generated/prisma/enums";
+import { ReceiptEvidenceReuseError } from "@/lib/data/errors";
+import type { ReceiptEvidenceInput } from "@/lib/data/store-types";
+import { verifyReceiptEvidenceToken } from "@/lib/receipts/receipt-evidence-token";
+import { receiptEvidenceSecret } from "@/lib/receipts/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +40,7 @@ const BodySchema = z
       .nullable()
       .optional(),
     receiptUrl: z.string().max(500).nullable().optional(),
+    receiptEvidenceToken: z.string().min(1).max(4096).nullable().optional(),
     attestationVersion: z.string().min(1).optional(),
     attested: z.boolean().optional().default(false),
   })
@@ -46,13 +55,24 @@ const BodySchema = z
  * Self-attestation. This is the only way a pledge becomes "raised", because
  * the platform has no access to candidate backends and never will.
  *
- * A pledge with a receipt lands as COMPLETED; without one it lands as
- * UNVERIFIED and shows in the lighter bar segment. Both are honest, and the
- * UI never pretends otherwise.
+ * A pledge with secure attached evidence or a matching AI-check token lands as
+ * COMPLETED; a plain self-report lands as UNVERIFIED. AI checking is a
+ * consistency screen, not proof that a committee accepted the contribution.
  */
 export async function POST(request: Request) {
   const { data: body, error } = await parseBody(request, BodySchema);
   if (error) return error;
+
+  // These are two different privacy contracts: a stored private object versus
+  // a memory-only AI check. Never retain an uploaded image while presenting
+  // the public contribution as AI-checked.
+  if (body.receiptUrl && body.receiptEvidenceToken) {
+    return jsonError(
+      422,
+      "conflicting_receipt_evidence",
+      "Choose either a private receipt attachment or an AI receipt check, not both.",
+    );
+  }
 
   const user = await getSessionUser();
   if (!user) {
@@ -74,6 +94,13 @@ export async function POST(request: Request) {
   }
 
   const { pledge: existing, candidate } = context;
+  const requestedEvidenceType: ContributionEvidenceType | null = body.declined
+    ? null
+    : body.receiptEvidenceToken
+      ? ContributionEvidenceType.RECEIPT_AI_CHECKED
+      : body.receiptUrl
+        ? ContributionEvidenceType.RECEIPT_ATTACHED
+        : ContributionEvidenceType.SELF_REPORTED;
 
   // Ownership check before anything else: a pledge id must never be usable by
   // anyone but the person who created it.
@@ -90,6 +117,16 @@ export async function POST(request: Request) {
         409,
         "pledge_already_resolved",
         "That contribution was already resolved. Refresh to see its current status.",
+      );
+    }
+    if (
+      !body.declined &&
+      existing.evidenceType !== requestedEvidenceType
+    ) {
+      return jsonError(
+        409,
+        "pledge_already_resolved",
+        "That contribution was already recorded with a different evidence status. Refresh to see the saved result.",
       );
     }
     const progress = await store.getProgress(existing.targetId);
@@ -167,15 +204,81 @@ export async function POST(request: Request) {
     receiptUrl = body.receiptUrl;
   }
 
-  const updated = await store.confirmPledge({
-    pledgeId: body.pledgeId,
-    userId: user.id,
-    confirmedAmountCents: body.confirmedAmountCents ?? null,
-    ocrAmountCents: body.ocrAmountCents ?? null,
-    receiptUrl,
-    attestationVersion: requiredAttestationVersion,
-    declined: body.declined,
-  });
+  const confirmedAmountCents =
+    body.confirmedAmountCents ?? existing.amountCents;
+  let receiptEvidence: ReceiptEvidenceInput | null = null;
+  let evidenceType: ContributionEvidenceType | null = body.declined
+    ? null
+    : ContributionEvidenceType.SELF_REPORTED;
+
+  if (!body.declined && body.receiptEvidenceToken) {
+    const secret = receiptEvidenceSecret();
+    const claims = secret
+      ? verifyReceiptEvidenceToken(
+          body.receiptEvidenceToken,
+          {
+            userId: user.id,
+            pledgeId: existing.id,
+            targetId: existing.targetId,
+            amountCents: confirmedAmountCents,
+          },
+          secret,
+        )
+      : null;
+    if (!claims) {
+      return jsonError(
+        422,
+        "invalid_receipt_evidence",
+        "That receipt check expired or doesn't match this contribution. You can retry it or continue as self-reported.",
+      );
+    }
+
+    evidenceType = ContributionEvidenceType.RECEIPT_AI_CHECKED;
+    receiptEvidence = {
+      pledgeId: existing.id,
+      userId: user.id,
+      status: ReceiptCheckStatus.AI_CHECKED_MATCH,
+      model: claims.model,
+      checkedAt: new Date(claims.checkedAt),
+      extractedAmountCents: claims.extractedAmountCents,
+      contributionDate: new Date(
+        `${claims.contributionDate}T00:00:00.000Z`,
+      ),
+      candidateMatched: claims.candidateMatched,
+      committeeMatched: claims.committeeMatched,
+      amountMatched: true,
+      processorMatched: true,
+      datePlausible: true,
+      reasons: [],
+      evidenceHash: claims.evidenceHash,
+    };
+  } else if (!body.declined && receiptUrl) {
+    evidenceType = ContributionEvidenceType.RECEIPT_ATTACHED;
+  }
+
+  let updated;
+  try {
+    updated = await store.confirmPledge({
+      pledgeId: body.pledgeId,
+      userId: user.id,
+      confirmedAmountCents: body.confirmedAmountCents ?? null,
+      ocrAmountCents: body.ocrAmountCents ?? null,
+      receiptUrl,
+      evidenceType,
+      receiptEvidence,
+      attestationVersion: requiredAttestationVersion,
+      declined: body.declined,
+    });
+  } catch (cause) {
+    if (cause instanceof ReceiptEvidenceReuseError) {
+      return jsonError(
+        409,
+        "receipt_already_used",
+        "That receipt was already used for another contribution. Continue as self-reported or use a different receipt.",
+      );
+    }
+    return jsonError(500, "confirm_failed", "We couldn't record that. Please try again.");
+  }
 
   if (!updated) {
     return jsonError(409, "confirm_failed", "We couldn't record that. Please try again.");
@@ -188,6 +291,13 @@ export async function POST(request: Request) {
       409,
       "pledge_already_resolved",
       "That contribution was already resolved. Refresh to see its current status.",
+    );
+  }
+  if (!body.declined && updated.evidenceType !== evidenceType) {
+    return jsonError(
+      409,
+      "pledge_already_resolved",
+      "Another confirmation was saved first. Refresh to see its evidence status.",
     );
   }
 

@@ -7,6 +7,7 @@ import { absoluteUrl } from "@/lib/site";
 import { formatCentsShort, parseAmountToCents } from "@/lib/money";
 import { PLATFORM_LABELS } from "@/lib/tracking/link-builder";
 import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
+import { isAiReceiptReviewConfigured } from "@/lib/receipts/config";
 import { SiteHeader } from "@/components/layout/site-header";
 import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
 import { CoalitionVerificationBadge } from "@/components/coalitions/coalition-verification-badge";
@@ -15,6 +16,7 @@ import { LayeredProgressBar } from "@/components/targets/layered-progress-bar";
 import { DeadlinePill } from "@/components/targets/deadline-pill";
 import { Avatar } from "@/components/targets/target-candidate-card";
 import { ContributeButton } from "@/components/contribute/contribute-button";
+import { ActivityFeed } from "@/components/activity/activity-feed";
 import { ShareActionLink } from "@/components/share/share-action-link";
 import {
   Card,
@@ -75,6 +77,10 @@ export default async function TargetPage({
   const target = await store.getTargetBySlug(slug);
   if (!target) notFound();
 
+  // Start this independent read immediately. Target pages stay server-rendered,
+  // so recent support is useful in the first paint without client-side fetches.
+  const activityPromise = store.listActivityForTarget(target.id, 6);
+
   const requestedAmount = query.amount ? parseAmountToCents(query.amount) : null;
 
   // Only honour ?resume= for a pledge the current visitor actually owns, so a
@@ -99,6 +105,7 @@ export default async function TargetPage({
   }
 
   const { candidate, coalition, progress } = target;
+  const activity = await activityPromise;
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink-50">
@@ -248,6 +255,10 @@ export default async function TargetPage({
               autoOpen={requestedAmount !== null || resumePledgeId !== null}
               initialAmountCents={resumeAmountCents ?? requestedAmount}
               resumePledgeId={resumePledgeId}
+              receiptReviewAvailable={
+                isAiReceiptReviewConfigured() &&
+                Boolean(candidate.donationUrlVerifiedAt)
+              }
             />
             {candidate.platform && (
               <p className="text-center text-xs text-ink-500">
@@ -261,6 +272,10 @@ export default async function TargetPage({
         </Card>
 
         <SourceOfFundsNotice className="mt-5" candidates={[candidate]} />
+
+        <div className="mt-5">
+          <ActivityFeed items={activity} scope="target" />
+        </div>
 
         <div className="mt-5 flex justify-center">
           <ShareActionLink

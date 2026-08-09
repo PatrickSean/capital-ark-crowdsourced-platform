@@ -13,6 +13,7 @@ import { PrismaClient } from "../src/generated/prisma/client.js";
 import {
   ActivityType,
   CoalitionVerificationStatus,
+  ContributionEvidenceType,
   PledgeStatus,
   TargetStatus,
 } from "../src/generated/prisma/enums.js";
@@ -166,6 +167,11 @@ async function main() {
           status: p.status,
           trackingTagUsed: `${fixtures.coalition.trackingPrefix}-SEED`,
           receiptUrl: p.hasReceipt ? "seed/receipt.png" : null,
+          evidenceType: resolved
+            ? p.hasReceipt
+              ? ContributionEvidenceType.RECEIPT_ATTACHED
+              : ContributionEvidenceType.SELF_REPORTED
+            : null,
           isAnonymousAtPledge: p.isAnonymousAtPledge,
           attestedAt: resolved ? createdAt : null,
           attestationVersion: resolved ? "2026-01-v1" : null,
@@ -178,18 +184,16 @@ async function main() {
         p.status === PledgeStatus.COMPLETED ||
         p.status === PledgeStatus.UNVERIFIED
       ) {
-        const user = fixtures.users.find((u) => u.id === p.userId);
         await prisma.activityEvent.upsert({
           where: { id: p.id.replace(/^0/, "9") },
           create: {
             id: p.id.replace(/^0/, "9"),
             coalitionId: fixtures.coalition.id,
             targetId: p.targetId,
-            actorId: p.userId,
             type: ActivityType.PLEDGE_CONFIRMED,
-            actorLabel: p.isAnonymousAtPledge
-              ? "Someone"
-              : (user?.displayName ?? "A supporter"),
+            evidenceType: p.hasReceipt
+              ? ContributionEvidenceType.RECEIPT_ATTACHED
+              : ContributionEvidenceType.SELF_REPORTED,
             amountCents: p.confirmedAmountCents,
             createdAt,
           },
@@ -306,7 +310,7 @@ async function seedNcHemp() {
     update: { role: "OWNER" },
   });
 
-  for (const t of ncHemp.hempTargets) {
+  for (const [index, t] of ncHemp.hempTargets.entries()) {
     const targetData = {
       slug: t.slug,
       coalitionId: ncHemp.hempCoalition.id,
@@ -328,6 +332,27 @@ async function seedNcHemp() {
       },
       update: targetData,
     });
+
+    const launchActivityId = ncHemp.hempLaunchActivityIds[index];
+    if (launchActivityId) {
+      await prisma.activityEvent.upsert({
+        where: { id: launchActivityId },
+        create: {
+          id: launchActivityId,
+          coalitionId: ncHemp.hempCoalition.id,
+          targetId: t.id,
+          type: ActivityType.TARGET_CREATED,
+          message: t.title,
+          createdAt: ncHemp.HEMP_LAUNCHED_AT,
+        },
+        update: {
+          coalitionId: ncHemp.hempCoalition.id,
+          targetId: t.id,
+          type: ActivityType.TARGET_CREATED,
+          message: t.title,
+        },
+      });
+    }
   }
 
   const linked = ncHemp.hempCandidates.filter((c) => c.donationUrl).length;

@@ -4,7 +4,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { describeReferenceLink } from "@/lib/reference-link";
 import type { ProgressSnapshot, TargetView } from "@/lib/domain/types";
-import { ContributeFlowModal } from "./contribute-flow-modal";
+import {
+  ContributeFlowModal,
+  type ContributionEntryPoint,
+} from "./contribute-flow-modal";
 
 /**
  * The single primary action on a target.
@@ -22,6 +25,7 @@ export function ContributeButton({
   resumePledgeId,
   label,
   compactPendingState = false,
+  receiptReviewAvailable = false,
   onProgressChange,
 }: {
   target: TargetView;
@@ -32,12 +36,21 @@ export function ContributeButton({
   label?: string;
   /** Use the one-line "needs a link" state, for lists of many drives. */
   compactPendingState?: boolean;
+  /** Server-derived capability; no provider secret is exposed to the client. */
+  receiptReviewAvailable?: boolean;
   onProgressChange?: (progress: ProgressSnapshot) => void;
 }) {
   // Seeded from the prop rather than opened in an effect: autoOpen is decided
   // server-side from the URL and never changes, so a shared "?amount=50" link
   // renders with the modal already open instead of flashing the page first.
   const [open, setOpen] = useState(autoOpen);
+  const [entryPoint, setEntryPoint] =
+    useState<ContributionEntryPoint>("donate");
+
+  const openFlow = (nextEntryPoint: ContributionEntryPoint) => {
+    setEntryPoint(nextEntryPoint);
+    setOpen(true);
+  };
 
   const { donationUrl, platform, websiteUrl, fullName } = target.candidate;
   if (!donationUrl || !platform) {
@@ -52,14 +65,33 @@ export function ContributeButton({
 
   return (
     <>
-      <Button size={size} fullWidth onClick={() => setOpen(true)}>
-        {label ?? `Contribute to ${fullName}`}
-      </Button>
+      <div className="space-y-2">
+        <Button
+          size={size}
+          fullWidth
+          aria-haspopup="dialog"
+          onClick={() => openFlow("donate")}
+        >
+          {label ?? `Contribute to ${fullName}`}
+        </Button>
+        <Button
+          size={size === "lg" ? "md" : size}
+          fullWidth
+          variant="secondary"
+          aria-haspopup="dialog"
+          aria-label={`I already contributed to ${fullName}`}
+          onClick={() => openFlow("already-contributed")}
+        >
+          I already contributed
+        </Button>
+      </div>
 
       <ContributeFlowModal
         target={target}
         open={open}
         onClose={() => setOpen(false)}
+        entryPoint={entryPoint}
+        receiptReviewAvailable={receiptReviewAvailable}
         initialAmountCents={initialAmountCents}
         resumePledgeId={resumePledgeId}
         onProgressChange={onProgressChange}
