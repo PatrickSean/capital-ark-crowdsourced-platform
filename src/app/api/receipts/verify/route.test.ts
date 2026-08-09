@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getSessionUser: vi.fn(),
@@ -41,10 +41,15 @@ vi.mock("@/lib/receipts/receipt-review", async (importOriginal) => {
 });
 
 import { POST } from "./route";
+import { ReceiptModelError } from "@/lib/receipts/receipt-review";
 
 const USER_ID = "11111111-2222-4333-8444-555555555555";
 
 describe("POST /api/receipts/verify", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.IP_HASH_SALT = "receipt-tests-secret";
@@ -116,6 +121,56 @@ describe("POST /api/receipts/verify", () => {
       canSelfReport: false,
     });
     expect(mocks.extractReceiptWithOpenAI).not.toHaveBeenCalled();
+  });
+
+  it("keeps classified failures generic publicly and logs only safe fields", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mocks.extractReceiptWithOpenAI.mockRejectedValue(
+      new ReceiptModelError("billing", {
+        httpStatus: 429,
+        upstreamCode: "credit_balance_exhausted",
+        requestId: "req_safe_123",
+      }),
+    );
+
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: "unavailable",
+      receiptBacked: false,
+      aiChecked: false,
+      evidenceToken: null,
+      reasons: [{ code: "ai_temporarily_unavailable" }],
+    });
+    expect(mocks.recordReceiptReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "AI_UNAVAILABLE",
+        reasons: ["ai_unavailable_billing"],
+      }),
+    );
+    expect(mocks.extractReceiptWithOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith({
+      event: "receipt_review_failed",
+      category: "billing",
+      elapsedMs: expect.any(Number),
+      httpStatus: 429,
+      upstreamCode: "credit_balance_exhausted",
+      requestId: "req_safe_123",
+    });
+
+    const logged = JSON.stringify(warn.mock.calls);
+    for (const privateValue of [
+      "test-key",
+      USER_ID,
+      "pledge-1",
+      "private-name-never-logged.jpg",
+      "data:image/jpeg;base64",
+    ]) {
+      expect(logged).not.toContain(privateValue);
+    }
   });
 
   it("fails closed on an inconclusive or mismatching receipt", async () => {

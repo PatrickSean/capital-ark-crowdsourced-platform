@@ -8,6 +8,7 @@ import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
 import {
   MAX_RECEIPT_REQUEST_BYTES,
   ReceiptImageValidationError,
+  ReceiptModelError,
   evaluateReceipt,
   extractReceiptWithOpenAI,
   validateReceiptImage,
@@ -208,6 +209,7 @@ export async function POST(request: Request) {
     amountCents: amount.data,
   };
 
+  const reviewStartedAt = Date.now();
   try {
     const extraction = await extractReceiptWithOpenAI({
       bytes,
@@ -216,7 +218,7 @@ export async function POST(request: Request) {
       model: config.model,
       safetyIdentifier: receiptSafetyIdentifier(user.id, secret),
       imageDetail: config.imageDetail,
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(45_000),
     });
     const evaluation = evaluateReceipt(extraction, expected);
     if (!evaluation.accepted) {
@@ -310,14 +312,37 @@ export async function POST(request: Request) {
       evidenceToken,
       reasons: [],
     });
-  } catch {
+  } catch (error) {
+    const failure =
+      error instanceof ReceiptModelError
+        ? error
+        : new ReceiptModelError("upstream");
+    const diagnostic: Record<string, string | number> = {
+      event: "receipt_review_failed",
+      category: failure.code,
+      elapsedMs: Math.max(0, Date.now() - reviewStartedAt),
+    };
+    if (failure.httpStatus !== undefined) {
+      diagnostic.httpStatus = failure.httpStatus;
+    }
+    if (failure.upstreamCode !== undefined) {
+      diagnostic.upstreamCode = failure.upstreamCode;
+    }
+    if (failure.detail !== undefined) {
+      diagnostic.detail = failure.detail;
+    }
+    if (failure.requestId !== undefined) {
+      diagnostic.requestId = failure.requestId;
+    }
+    console.warn(diagnostic);
+
     await store.recordReceiptReview({
       pledgeId,
       userId: user.id,
       status: ReceiptCheckStatus.AI_UNAVAILABLE,
       model: config.model,
       checkedAt: new Date(),
-      reasons: ["ai_temporarily_unavailable"],
+      reasons: [`ai_unavailable_${failure.code}`],
     });
     return unavailable(
       "ai_temporarily_unavailable",

@@ -158,7 +158,8 @@ describe("OpenAI receipt extraction request", () => {
       model: "gpt-5-mini",
       store: false,
       safety_identifier: "hashed-stable-user",
-      max_output_tokens: 500,
+      reasoning: { effort: "minimal" },
+      max_output_tokens: 2_000,
       text: {
         format: {
           type: "json_schema",
@@ -190,9 +191,155 @@ describe("OpenAI receipt extraction request", () => {
         safetyIdentifier: "hashed-stable-user",
         fetchImpl: fetchImpl as typeof fetch,
       }),
-    ).rejects.toMatchObject({ code: "invalid_model_output" });
+    ).rejects.toMatchObject({
+      code: "invalid_output",
+      detail: "missing_output",
+    });
   });
+
+  it.each([
+    {
+      expected: "auth",
+      status: 401,
+      upstreamCode: "invalid_api_key",
+    },
+    {
+      expected: "billing",
+      status: 429,
+      upstreamCode: "credit_balance_exhausted",
+    },
+    {
+      expected: "rate_limit",
+      status: 429,
+      upstreamCode: "rate_limit_exceeded",
+    },
+    {
+      expected: "model",
+      status: 404,
+      upstreamCode: "model_not_found",
+    },
+    {
+      expected: "invalid_request",
+      status: 400,
+      upstreamCode: "not_allowlisted",
+    },
+    {
+      expected: "upstream",
+      status: 500,
+      upstreamCode: "server_error",
+    },
+  ])(
+    "classifies HTTP $status failures as $expected without retaining messages",
+    async ({ expected, status, upstreamCode }) => {
+      const privateMessage = "sk-private receipt donor@example.com";
+      const fetchImpl = vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: upstreamCode,
+              message: privateMessage,
+            },
+          }),
+          {
+            status,
+            headers: { "x-request-id": "req_safe_123" },
+          },
+        ),
+      );
+
+      let caught: unknown;
+      try {
+        await extractReceiptWithOpenAI(openAiArgs(fetchImpl as typeof fetch));
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toMatchObject({
+        code: expected,
+        httpStatus: status,
+        requestId: "req_safe_123",
+      });
+      if (upstreamCode === "not_allowlisted") {
+        expect(caught).not.toHaveProperty("upstreamCode", upstreamCode);
+      } else {
+        expect(caught).toHaveProperty("upstreamCode", upstreamCode);
+      }
+      expect(JSON.stringify(caught)).not.toContain(privateMessage);
+    },
+  );
+
+  it.each([
+    {
+      expected: "timeout",
+      failure: Object.assign(new Error("private timeout detail"), {
+        name: "TimeoutError",
+      }),
+    },
+    {
+      expected: "network",
+      failure: new TypeError("private network detail"),
+    },
+  ])("classifies $expected fetch failures", async ({ expected, failure }) => {
+    const fetchImpl = vi.fn(async () => {
+      throw failure;
+    });
+    await expect(
+      extractReceiptWithOpenAI(openAiArgs(fetchImpl as typeof fetch)),
+    ).rejects.toMatchObject({ code: expected });
+  });
+
+  it.each([
+    {
+      expectedDetail: "max_output_tokens",
+      payload: {
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [],
+      },
+    },
+    {
+      expectedDetail: "refusal",
+      payload: {
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              { type: "refusal", refusal: "private refusal explanation" },
+            ],
+          },
+        ],
+      },
+    },
+  ])(
+    "classifies $expectedDetail responses as invalid output",
+    async ({ expectedDetail, payload }) => {
+      const fetchImpl = vi.fn(async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      await expect(
+        extractReceiptWithOpenAI(openAiArgs(fetchImpl as typeof fetch)),
+      ).rejects.toMatchObject({
+        code: "invalid_output",
+        detail: expectedDetail,
+      });
+    },
+  );
 });
+
+function openAiArgs(fetchImpl: typeof fetch) {
+  return {
+    bytes: jpegBytes(),
+    mimeType: "image/jpeg" as const,
+    apiKey: "test-key",
+    model: "gpt-5-mini",
+    safetyIdentifier: "hashed-stable-user",
+    fetchImpl,
+  };
+}
 
 function pngBytes(): Uint8Array {
   return Uint8Array.from([
