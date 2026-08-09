@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ContributionEvidenceType,
   ReceiptCheckStatus,
 } from "@/generated/prisma/enums";
 import { demoStore } from "./demo-store";
@@ -52,6 +51,9 @@ describe("pledge idempotency and receipt evidence", () => {
     const second = await makePledge();
     const review = {
       userId,
+      targetId: target!.id,
+      candidateId: target!.candidate.id,
+      amountCents: 50_000,
       status: ReceiptCheckStatus.AI_CHECKED_MATCH,
       model: "gpt-5-mini",
       checkedAt: new Date(),
@@ -70,7 +72,6 @@ describe("pledge idempotency and receipt evidence", () => {
       pledgeId: first.id,
       userId,
       confirmedAmountCents: 50_000,
-      evidenceType: ContributionEvidenceType.RECEIPT_AI_CHECKED,
       receiptEvidence: { ...review, pledgeId: first.id },
       attestationVersion: "test-v1",
     });
@@ -85,10 +86,38 @@ describe("pledge idempotency and receipt evidence", () => {
         pledgeId: second.id,
         userId,
         confirmedAmountCents: 50_000,
-        evidenceType: ContributionEvidenceType.RECEIPT_AI_CHECKED,
         receiptEvidence: { ...review, pledgeId: second.id },
         attestationVersion: "test-v1",
       }),
     ).rejects.toBeInstanceOf(ReceiptEvidenceReuseError);
+  });
+
+  it("refuses to confirm a pending pledge without complete matching receipt evidence", async () => {
+    const userId = crypto.randomUUID();
+    await demoStore.ensureUser(userId);
+    const target = await demoStore.getTargetBySlug("hemp-destin-hall");
+    expect(target).not.toBeNull();
+    const pledge = await demoStore.createPledge({
+      userId,
+      targetId: target!.id,
+      amountCents: 25_000,
+      trackingTag: "HEMP",
+      isAnonymous: true,
+      clientRequestId: crypto.randomUUID(),
+    });
+
+    await expect(
+      demoStore.confirmPledge({
+        pledgeId: pledge.id,
+        userId,
+        confirmedAmountCents: 25_000,
+        receiptEvidence: null,
+        attestationVersion: "test-v1",
+      }),
+    ).rejects.toMatchObject({ name: "ReceiptVerificationRequiredError" });
+    await expect(demoStore.getPledge(pledge.id)).resolves.toMatchObject({
+      status: "PENDING",
+      evidenceType: null,
+    });
   });
 });

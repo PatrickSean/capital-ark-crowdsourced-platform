@@ -23,6 +23,7 @@ import {
   useReturnDetection,
 } from "./use-return-detection";
 import { ReceiptDropzone, type ReceiptResult } from "./receipt-dropzone";
+import { ReceiptCaptureHelp } from "./receipt-capture-help";
 import { ClaimAccountCard } from "@/components/account/claim-account-card";
 
 /**
@@ -36,10 +37,8 @@ type Step = "amount" | "waiting" | "confirm" | "done";
 type ReceiptOutcome =
   | "not-requested"
   | "ai-checked"
-  | "receipt-attached"
   | "needs-review"
   | "unavailable";
-type EvidenceMethod = "self-reported" | "receipt-backed";
 
 export type ContributionEntryPoint = "donate" | "already-contributed";
 
@@ -99,8 +98,6 @@ export function ContributeFlowModal({
   >(null);
   const [receiptOutcome, setReceiptOutcome] =
     useState<ReceiptOutcome>("not-requested");
-  const [evidenceMethod, setEvidenceMethod] =
-    useState<EvidenceMethod>("self-reported");
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [receiptAiConsent, setReceiptAiConsent] = useState(false);
   const [recordedAmountCents, setRecordedAmountCents] = useState<number | null>(
@@ -135,7 +132,6 @@ export function ContributeFlowModal({
       receiptFileRef.current = null;
       setReceiptEvidenceToken(null);
       setReceiptOutcome("not-requested");
-      setEvidenceMethod("self-reported");
       setEvidenceError(null);
       setReceiptAiConsent(false);
       setRecordedAmountCents(null);
@@ -271,27 +267,68 @@ export function ContributeFlowModal({
         return;
       }
 
-      if (!declined) {
-        let invalid = false;
+      const confirmed = declined ? null : effectiveConfirmedCents();
 
-        if (evidenceMethod === "receipt-backed" && !receipt) {
+      if (!declined) {
+        if (!receiptReviewAvailable) {
           setEvidenceError(
-            "Add a receipt image, or choose self-report to continue without one.",
+            "Receipt verification is not available for this recipient yet. Nothing has been added to the drive.",
           );
-          invalid = true;
-        } else if (evidenceMethod === "receipt-backed" && !receiptAiConsent) {
-          setEvidenceError(
-            "Confirm that you agree to the optional AI receipt check, or choose self-report.",
-          );
-          invalid = true;
+          return;
         }
+        if (!receipt) {
+          setEvidenceError(
+            "Upload a screenshot of the completed contribution receipt.",
+          );
+          return;
+        }
+        if (!receiptAiConsent) {
+          setEvidenceError(
+            "Agree to the AI receipt check so we can verify the screenshot.",
+          );
+          return;
+        }
+
+        if (confirmed === null) {
+          setError("That amount doesn't look right. Enter it like 50 or 50.00.");
+          return;
+        }
+
+        // Receipt verification is deliberately its own stage. A successful
+        // AI check reveals the attestation and final add action; inconclusive
+        // or unavailable checks never fall through to public progress.
+        if (receiptOutcome !== "ai-checked" || !receiptEvidenceToken) {
+          setBusy(true);
+          setError(null);
+          setEvidenceError(null);
+          setAttestError(null);
+
+          try {
+            const check = await checkReceipt({
+              pledgeId,
+              confirmedAmountCents: confirmed,
+              receipt,
+            });
+
+            setReceiptEvidenceToken(check.evidenceToken);
+            setReceiptOutcome(check.outcome);
+            setAttested(false);
+
+            if (check.outcome !== "ai-checked") {
+              setEvidenceError(check.message);
+            }
+          } finally {
+            setBusy(false);
+          }
+          return;
+        }
+
         if (!attested) {
           setAttestError(
-            "Please confirm the statement above so we can record this.",
+            "Please confirm the statement above so we can add this receipt-backed contribution.",
           );
-          invalid = true;
+          return;
         }
-        if (invalid) return;
       }
 
       setBusy(true);
@@ -300,53 +337,6 @@ export function ContributeFlowModal({
       setEvidenceError(null);
 
       try {
-        const confirmed = declined ? null : effectiveConfirmedCents();
-
-        if (!declined && confirmed === null) {
-          setBusy(false);
-          setError(
-            "That amount doesn't look right. Enter it like 50 or 50.00.",
-          );
-          return;
-        }
-
-        let nextEvidenceToken = declined ? null : receiptEvidenceToken;
-        let nextReceiptOutcome: ReceiptOutcome = declined
-          ? "not-requested"
-          : receiptOutcome;
-
-        if (
-          !declined &&
-          confirmed !== null &&
-          evidenceMethod === "receipt-backed" &&
-          receipt &&
-          !nextEvidenceToken &&
-          nextReceiptOutcome === "not-requested"
-        ) {
-          const check = await checkReceipt({
-            pledgeId,
-            confirmedAmountCents: confirmed,
-            receipt,
-          });
-
-          nextEvidenceToken = check.evidenceToken;
-          nextReceiptOutcome = check.outcome;
-          setReceiptEvidenceToken(check.evidenceToken);
-          setReceiptOutcome(check.outcome);
-
-          // Never turn a requested receipt check into a self-report behind the
-          // contributor's back. If matching is unavailable or inconclusive,
-          // pause here, select the honest fallback, and require their next
-          // explicit click before anything is added to public progress.
-          if (check.outcome !== "ai-checked") {
-            setReceipt(null);
-            receiptFileRef.current = null;
-            setReceiptAiConsent(false);
-            setEvidenceMethod("self-reported");
-            return;
-          }
-        }
-
         const res = await fetch("/api/pledges/confirm", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -355,11 +345,7 @@ export function ContributeFlowModal({
             declined,
             attested: !declined,
             confirmedAmountCents: confirmed,
-            ocrAmountCents:
-              evidenceMethod === "receipt-backed"
-                ? receipt?.ocrAmountCents ?? null
-                : null,
-            receiptEvidenceToken: nextEvidenceToken,
+            receiptEvidenceToken: declined ? null : receiptEvidenceToken,
             attestationVersion,
           }),
         });
@@ -368,21 +354,22 @@ export function ContributeFlowModal({
 
         if (!res.ok) {
           const errorCode = payload?.error?.code;
-          if (errorCode === "invalid_receipt_evidence") {
+          if (
+            errorCode === "invalid_receipt_evidence" ||
+            errorCode === "receipt_verification_required"
+          ) {
             // The short-lived token can expire while the modal remains open.
             // Clear it so the next click performs a fresh check.
             setReceiptEvidenceToken(null);
             setReceiptOutcome("not-requested");
           } else if (errorCode === "receipt_already_used") {
-            // Never keep retrying evidence the server has already claimed for
-            // another pledge. Discard it locally and offer an explicit
-            // self-report fallback instead.
+            // Evidence already claimed for another pledge cannot be retried.
+            // Keep the contribution unconfirmed and require another image.
             setReceipt(null);
             receiptFileRef.current = null;
             setReceiptEvidenceToken(null);
             setReceiptOutcome("not-requested");
             setReceiptAiConsent(false);
-            setEvidenceMethod("self-reported");
           }
           setError(
             payload?.error?.message ??
@@ -423,7 +410,7 @@ export function ContributeFlowModal({
       attestationVersion,
       receipt,
       receiptAiConsent,
-      evidenceMethod,
+      receiptReviewAvailable,
       receiptEvidenceToken,
       receiptOutcome,
       effectiveConfirmedCents,
@@ -458,7 +445,11 @@ export function ContributeFlowModal({
           amountCents={amountCents}
           amountIsValid={customAmountIsValid}
           entryPoint={entryPoint}
-          evidenceMethod={evidenceMethod}
+          receiptVerified={
+            receiptOutcome === "ai-checked" && Boolean(receiptEvidenceToken)
+          }
+          receiptOutcome={receiptOutcome}
+          receiptReviewAvailable={receiptReviewAvailable}
           onContribute={handleContribute}
           onContinueAlready={handleAlreadyContributed}
           onConfirm={() => submitConfirmation(false)}
@@ -519,30 +510,26 @@ export function ContributeFlowModal({
             setConfirmedText(value);
             setReceiptEvidenceToken(null);
             setReceiptOutcome("not-requested");
+            setAttested(false);
           }}
           receipt={receipt}
-          evidenceMethod={evidenceMethod}
           receiptOutcome={receiptOutcome}
+          receiptVerified={
+            receiptOutcome === "ai-checked" && Boolean(receiptEvidenceToken)
+          }
           receiptReviewAvailable={receiptReviewAvailable}
-          onEvidenceMethod={(method) => {
-            setEvidenceMethod(method);
-            setEvidenceError(null);
-            if (method === "self-reported") {
-              setReceipt(null);
-              receiptFileRef.current = null;
-              setReceiptEvidenceToken(null);
-              setReceiptOutcome("not-requested");
-              setReceiptAiConsent(false);
-            } else {
-              setReceiptEvidenceToken(null);
-              setReceiptOutcome("not-requested");
-            }
-          }}
+          busy={busy}
           evidenceError={evidenceError}
           receiptAiConsent={receiptAiConsent}
           onReceiptAiConsent={(consented) => {
             setReceiptAiConsent(consented);
-            if (consented) setEvidenceError(null);
+            if (consented) {
+              setEvidenceError(null);
+            } else {
+              setReceiptEvidenceToken(null);
+              setReceiptOutcome("not-requested");
+              setAttested(false);
+            }
           }}
           onReceipt={(nextReceipt) => {
             const isNewImage = receiptFileRef.current !== nextReceipt.file;
@@ -551,6 +538,7 @@ export function ContributeFlowModal({
             setReceiptEvidenceToken(null);
             setReceiptOutcome("not-requested");
             setEvidenceError(null);
+            setAttested(false);
             if (isNewImage) setReceiptAiConsent(false);
           }}
           onClearReceipt={() => {
@@ -559,6 +547,7 @@ export function ContributeFlowModal({
             setReceiptEvidenceToken(null);
             setReceiptOutcome("not-requested");
             setReceiptAiConsent(false);
+            setAttested(false);
           }}
           attested={attested}
           onAttested={(v) => {
@@ -573,7 +562,6 @@ export function ContributeFlowModal({
         <DoneStep
           target={target}
           amountCents={recordedAmountCents ?? amountCents}
-          receiptOutcome={receiptOutcome}
         />
       )}
     </ModalSheet>
@@ -594,10 +582,10 @@ function stepTitle(
       return "Finish on the donation page";
     case "confirm":
       return entryPoint === "already-contributed"
-        ? `Confirm your contribution to ${target.candidate.fullName}`
-        : "Did you complete your contribution?";
+        ? `Verify your contribution to ${target.candidate.fullName}`
+        : "Verify your contribution";
     case "done":
-      return "Thank you";
+      return "Receipt-backed contribution added";
   }
 }
 
@@ -611,8 +599,8 @@ function StepIndicator({
 }) {
   const steps =
     entryPoint === "already-contributed"
-      ? ["Amount", "Confirm"]
-      : ["Amount", "Donate", "Confirm"];
+      ? ["Amount", "Verify"]
+      : ["Amount", "Donate", "Verify"];
   return (
     <ol
       className="mb-4 flex items-center gap-2"
@@ -681,14 +669,14 @@ function AmountStep({
           {entryPoint === "already-contributed" ? (
             <>
               Enter the amount you already gave to{" "}
-              {target.candidate.fullName}. On the next step, you can add it as
-              self-reported or attach a receipt.
+              {target.candidate.fullName}. On the next step, upload the
+              completed receipt so we can verify it.
             </>
           ) : (
             <>
               Choose an amount. You&rsquo;ll complete the contribution on{" "}
               {platformLabel(target.candidate.platform)}, then come back here
-              and we&rsquo;ll add it to the total.
+              and upload the receipt to add it to the total.
             </>
           )}
         </p>
@@ -776,9 +764,9 @@ function AmountStep({
         >
           <span className="font-semibold">Nothing will be charged.</span> This
           only adds a contribution you already completed to this drive&rsquo;s
-          progress. An earlier contribution may not carry this drive&rsquo;s
-          tracking tag, so the committee&rsquo;s processor may not attribute it
-          to the drive.
+          progress after its receipt is verified. An earlier contribution may
+          not carry this drive&rsquo;s tracking tag, so the committee&rsquo;s processor
+          may not attribute it to the drive.
         </div>
       ) : (
         <HandoffNotice
@@ -838,7 +826,8 @@ function WaitingStep({
         <p className="mx-auto mt-1.5 max-w-xs text-sm text-ink-600">
           Complete your {formatCentsShort(amountCents)} contribution there. Come
           back to this tab when you&rsquo;re done and we&rsquo;ll pick up right
-          here.
+          here. Keep the confirmation page or email so you can upload its
+          receipt.
         </p>
       </div>
 
@@ -857,10 +846,10 @@ function ConfirmStep({
   confirmedText,
   onConfirmedText,
   receipt,
-  evidenceMethod,
   receiptOutcome,
+  receiptVerified,
   receiptReviewAvailable,
-  onEvidenceMethod,
+  busy,
   evidenceError,
   receiptAiConsent,
   onReceiptAiConsent,
@@ -879,10 +868,10 @@ function ConfirmStep({
   confirmedText: string;
   onConfirmedText: (v: string) => void;
   receipt: ReceiptResult | null;
-  evidenceMethod: EvidenceMethod;
   receiptOutcome: ReceiptOutcome;
+  receiptVerified: boolean;
   receiptReviewAvailable: boolean;
-  onEvidenceMethod: (method: EvidenceMethod) => void;
+  busy: boolean;
   evidenceError: string | null;
   receiptAiConsent: boolean;
   onReceiptAiConsent: (consented: boolean) => void;
@@ -904,15 +893,15 @@ function ConfirmStep({
       <p className="text-sm text-ink-600">
         {entryPoint === "already-contributed" ? (
           <>
-            Add what you already gave to {target.coalition.name}&rsquo;s
-            progress. Choose self-report for the fastest path, or attach a
-            receipt as supporting evidence.
+            Upload the completed receipt for what you already gave. We&rsquo;ll
+            check its visible details before updating {target.coalition.name}
+            &rsquo;s progress.
           </>
         ) : (
           <>
-            Tell us what happened so we can update{" "}
-            {target.coalition.name}&rsquo;s progress. We have no access to{" "}
-            {platformLabel(target.candidate.platform)}&rsquo;s records.
+            Upload the receipt from {platformLabel(target.candidate.platform)}
+            . We can&rsquo;t see the processor&rsquo;s records, so a matched
+            receipt is required before this can be added to the drive.
           </>
         )}
       </p>
@@ -981,176 +970,155 @@ function ConfirmStep({
         </div>
       )}
 
-      {(receiptOutcome === "needs-review" ||
-        receiptOutcome === "unavailable") && (
-        <div
-          role="status"
-          className="rounded-xl bg-amber-50 p-3.5 text-sm leading-relaxed text-amber-950 ring-1 ring-inset ring-amber-200"
-        >
-          <p className="font-semibold">
-            {receiptOutcome === "needs-review"
-              ? "We couldn’t confidently match that receipt."
-              : "The optional receipt check is unavailable right now."}
-          </p>
-          <p className="mt-1 text-xs text-amber-900">
-            Nothing has been added yet. Use the selected self-report option
-            below, or choose AI-check a receipt again to try another image.
-          </p>
-        </div>
-      )}
-
-      <fieldset
-        className="space-y-2"
-        aria-describedby={evidenceError ? "receipt-evidence-error" : undefined}
+      <section
+        aria-labelledby="receipt-verification-heading"
+        className="space-y-2.5 rounded-xl bg-ink-50 p-3.5 ring-1 ring-inset ring-ink-200"
       >
-        <legend className="text-sm font-semibold text-ink-800">
-          How should this contribution be shown?
-        </legend>
-
-        <EvidenceChoice
-          value="self-reported"
-          selected={evidenceMethod === "self-reported"}
-          title="Self-report"
-          description="Fastest. Adds the amount to the clearly labeled self-reported total."
-          onSelect={onEvidenceMethod}
-        />
-
-        <EvidenceChoice
-          value="receipt-backed"
-          selected={evidenceMethod === "receipt-backed"}
-          title="AI-check a receipt"
-          description={
-            receiptReviewAvailable
-              ? "Optional. Checks whether the visible receipt details match this contribution."
-              : "Not available yet. You can still add this contribution as self-reported."
-          }
-          disabled={!receiptReviewAvailable}
-          onSelect={onEvidenceMethod}
-        />
-      </fieldset>
-
-      {evidenceMethod === "receipt-backed" && (
-        <div className="space-y-2 rounded-xl bg-ink-50 p-3.5 ring-1 ring-inset ring-ink-200">
-          <p className="text-xs leading-relaxed text-ink-600">
-            Before uploading, crop or cover your address, email, and card
-            digits. We only need the committee name, amount, and date. A
-            receipt is supporting evidence; it does not confirm the
-            contribution against campaign records.
-          </p>
-          <ReceiptDropzone onResult={onReceipt} onClear={onClearReceipt} />
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-white p-3 ring-1 ring-inset ring-ink-200">
-            <input
-              type="checkbox"
-              checked={receiptAiConsent}
-              onChange={(event) =>
-                onReceiptAiConsent(event.currentTarget.checked)
-              }
-              aria-describedby="receipt-ai-consent-description receipt-retention-disclosure"
-              className="mt-0.5 size-5 shrink-0 rounded accent-brand-700"
-            />
-            <span
-              id="receipt-ai-consent-description"
-              className="text-xs leading-relaxed text-ink-700"
-            >
-              I agree to send this image to OpenAI for an optional AI receipt
-              check. I understand that an AI match is not confirmation from
-              the campaign or payment processor.
-            </span>
-          </label>
-          <p
-            id="receipt-retention-disclosure"
-            className="text-xs leading-relaxed text-ink-600"
+        <div>
+          <h3
+            id="receipt-verification-heading"
+            className="text-sm font-semibold text-ink-900"
           >
-            Capital Ark does not store the raw image. OpenAI may retain it in
-            abuse-monitoring logs for up to 30 days unless Zero Data Retention
-            applies.{" "}
-            <a
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-900"
-            >
-              Read the privacy details
-            </a>
-            .
+            Verify with a receipt
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-ink-600">
+            Required. Keep the committee or recipient, amount, date, and
+            completed status visible. Your receipt image is never shown in
+            public activity.
           </p>
-          {evidenceError && (
-            <p
-              id="receipt-evidence-error"
-              role="alert"
-              className="text-xs font-medium text-red-700"
-            >
-              {evidenceError}
-            </p>
-          )}
         </div>
-      )}
 
-      <AttestationCheckbox
-        checked={attested}
-        onChange={onAttested}
-        version={attestationVersion}
-        error={attestError}
-      />
+        <ReceiptCaptureHelp />
+
+        {!receiptReviewAvailable ? (
+          <div
+            role="alert"
+            className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-950 ring-1 ring-inset ring-amber-200"
+          >
+            <p className="font-semibold">
+              Receipt verification isn&rsquo;t ready for this recipient.
+            </p>
+            <p className="mt-1">
+              Nothing can be added to the drive until verification is
+              available. Please try again later.
+            </p>
+          </div>
+        ) : (
+          <>
+            <ReceiptDropzone
+              onResult={onReceipt}
+              onClear={onClearReceipt}
+              disabled={busy}
+            />
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-white p-3 ring-1 ring-inset ring-ink-200">
+              <input
+                type="checkbox"
+                checked={receiptAiConsent}
+                required
+                disabled={busy || receiptVerified}
+                onChange={(event) =>
+                  onReceiptAiConsent(event.currentTarget.checked)
+                }
+                aria-describedby="receipt-ai-consent-description receipt-retention-disclosure"
+                className="mt-0.5 size-5 shrink-0 rounded accent-brand-700"
+              />
+              <span
+                id="receipt-ai-consent-description"
+                className="text-xs leading-relaxed text-ink-700"
+              >
+                I agree to send this image to OpenAI for the required receipt
+                check. I understand that an AI match is an automated
+                consistency check, not confirmation from the campaign or
+                payment processor.
+              </span>
+            </label>
+            <p
+              id="receipt-retention-disclosure"
+              className="text-xs leading-relaxed text-ink-600"
+            >
+              Capital Ark does not store the raw image. OpenAI may retain it in
+              abuse-monitoring logs for up to 30 days unless Zero Data
+              Retention applies.{" "}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-900"
+              >
+                Read the privacy details
+              </a>
+              .
+            </p>
+
+            {receiptVerified && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-950 ring-1 ring-inset ring-emerald-200"
+              >
+                <p className="font-semibold">Receipt details matched</p>
+                <p className="mt-1">
+                  The visible recipient, amount, date, processor, and completed
+                  status passed the automated check. Confirm the statement
+                  below to add this receipt-backed contribution.
+                </p>
+              </div>
+            )}
+
+            {(receiptOutcome === "needs-review" ||
+              receiptOutcome === "unavailable") && (
+              <div
+                id="receipt-evidence-error"
+                role="alert"
+                className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-950 ring-1 ring-inset ring-amber-200"
+              >
+                <p className="font-semibold">
+                  {receiptOutcome === "needs-review"
+                    ? "We couldn’t verify that receipt."
+                    : "We couldn’t check the receipt right now."}
+                </p>
+                <p className="mt-1">
+                  {evidenceError} Nothing has been added.{" "}
+                  {receiptOutcome === "needs-review"
+                    ? "Remove it and upload a clearer screenshot with all required details visible."
+                    : "Try the receipt check again in a moment, or upload another screenshot."}
+                </p>
+              </div>
+            )}
+
+            {evidenceError &&
+              receiptOutcome !== "needs-review" &&
+              receiptOutcome !== "unavailable" && (
+                <p
+                  id="receipt-evidence-error"
+                  role="alert"
+                  className="text-xs font-medium text-red-700"
+                >
+                  {evidenceError}
+                </p>
+              )}
+          </>
+        )}
+      </section>
+
+      {receiptVerified && (
+        <AttestationCheckbox
+          checked={attested}
+          onChange={onAttested}
+          version={attestationVersion}
+          error={attestError}
+        />
+      )}
     </div>
-  );
-}
-
-function EvidenceChoice({
-  value,
-  selected,
-  title,
-  description,
-  disabled = false,
-  onSelect,
-}: {
-  value: EvidenceMethod;
-  selected: boolean;
-  title: string;
-  description: string;
-  disabled?: boolean;
-  onSelect: (method: EvidenceMethod) => void;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex min-h-16 items-start gap-3 rounded-xl p-3.5 ring-1 ring-inset transition-colors",
-        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-        selected
-          ? "bg-brand-50 ring-brand-500"
-          : "bg-white ring-ink-200",
-        !selected && !disabled && "hover:bg-ink-50",
-      )}
-    >
-      <input
-        type="radio"
-        name="contribution-evidence"
-        value={value}
-        checked={selected}
-        disabled={disabled}
-        onChange={() => onSelect(value)}
-        className="mt-0.5 size-5 shrink-0 accent-brand-700"
-      />
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold text-ink-900">
-          {title}
-        </span>
-        <span className="mt-0.5 block text-xs leading-relaxed text-ink-600">
-          {description}
-        </span>
-      </span>
-    </label>
   );
 }
 
 function DoneStep({
   target,
   amountCents,
-  receiptOutcome,
 }: {
   target: TargetView;
   amountCents: number;
-  receiptOutcome: ReceiptOutcome;
 }) {
   const shareUrl = absoluteUrl(`/t/${target.slug}`);
   const shareText = [
@@ -1182,16 +1150,9 @@ function DoneStep({
         </p>
         <p className="mt-1 text-sm text-ink-600">
           Thanks for backing {target.candidate.fullName} with{" "}
-          {target.coalition.name}.
-          {receiptOutcome === "ai-checked"
-            ? " Your receipt was AI-checked and matched the visible contribution details, so this appears as receipt-backed. It is not confirmation from campaign records."
-            : receiptOutcome === "receipt-attached"
-              ? " Your receipt was attached, so this appears as receipt-backed. It is not confirmation from campaign records."
-            : receiptOutcome === "needs-review"
-              ? " The receipt could not be confidently matched, so this counts as self-reported."
-              : receiptOutcome === "unavailable"
-                ? " The optional receipt check was unavailable, so this counts as self-reported."
-                : " This counts as self-reported."}
+          {target.coalition.name}. Your receipt passed the automated check, so
+          this appears as receipt-backed. It is not confirmation from campaign
+          records.
         </p>
       </div>
 
@@ -1223,7 +1184,9 @@ function ModalFooter({
   amountCents,
   amountIsValid,
   entryPoint,
-  evidenceMethod,
+  receiptVerified,
+  receiptOutcome,
+  receiptReviewAvailable,
   onContribute,
   onContinueAlready,
   onConfirm,
@@ -1238,7 +1201,9 @@ function ModalFooter({
   amountCents: number;
   amountIsValid: boolean;
   entryPoint: ContributionEntryPoint;
-  evidenceMethod: EvidenceMethod;
+  receiptVerified: boolean;
+  receiptOutcome: ReceiptOutcome;
+  receiptReviewAvailable: boolean;
   onContribute: () => void;
   onContinueAlready: () => void;
   onConfirm: () => void;
@@ -1272,14 +1237,14 @@ function ModalFooter({
     return (
       <div className="space-y-2">
         <Button size="lg" fullWidth variant="secondary" onClick={onSkipWait}>
-          I&rsquo;m done — confirm my contribution
+          I&rsquo;m done — verify my receipt
         </Button>
         <Button size="sm" fullWidth variant="ghost" onClick={onReopen}>
           Reopen the donation page
         </Button>
         <span className="sr-only" aria-live="polite">
           {returnState === "returned"
-            ? "Welcome back. Please confirm your contribution."
+            ? "Welcome back. Please upload your contribution receipt."
             : "Waiting for you to finish on the donation page."}
         </span>
       </div>
@@ -1293,11 +1258,15 @@ function ModalFooter({
           size="lg"
           fullWidth
           loading={busy}
+          disabled={!receiptReviewAvailable}
           onClick={onConfirm}
         >
-          {evidenceMethod === "receipt-backed"
-            ? "Check receipt and add"
-            : "Add as self-reported"}
+          {receiptVerified
+            ? "Add receipt-backed contribution"
+            : receiptOutcome === "needs-review" ||
+                receiptOutcome === "unavailable"
+              ? "Try receipt check again"
+              : "Check receipt"}
         </Button>
         <Button
           size="sm"
@@ -1328,10 +1297,8 @@ function parseContributionAmount(input: string): number | null {
 
 function receiptOutcomeFromEvidenceType(value: unknown): ReceiptOutcome {
   if (value === "RECEIPT_AI_CHECKED") return "ai-checked";
-  if (value === "RECEIPT_ATTACHED") return "receipt-attached";
-  if (value === "SELF_REPORTED") return "not-requested";
-  // Null and unknown future values fail closed to the least-trusting public
-  // description.
+  // Anything other than an AI-checked receipt fails closed. The server also
+  // enforces this, so the UI never describes tokenless evidence as checked.
   return "not-requested";
 }
 
@@ -1346,6 +1313,7 @@ async function checkReceipt({
 }): Promise<{
   outcome: ReceiptOutcome;
   evidenceToken: string | null;
+  message: string;
 }> {
   try {
     const formData = new FormData();
@@ -1358,11 +1326,17 @@ async function checkReceipt({
       method: "POST",
       body: formData,
     });
+    const payload = await res.json().catch(() => null);
     if (!res.ok) {
-      return { outcome: "unavailable", evidenceToken: null };
+      return {
+        outcome: "unavailable",
+        evidenceToken: null,
+        message:
+          payload?.error?.message ??
+          "The receipt service could not read that upload.",
+      };
     }
 
-    const payload = await res.json();
     if (
       payload?.status === "ai_checked" &&
       payload?.receiptBacked === true &&
@@ -1371,15 +1345,48 @@ async function checkReceipt({
       return {
         outcome: "ai-checked",
         evidenceToken: payload.evidenceToken,
+        message: "The visible receipt details matched.",
       };
     }
     if (payload?.status === "needs_review") {
-      return { outcome: "needs-review", evidenceToken: null };
+      return {
+        outcome: "needs-review",
+        evidenceToken: null,
+        message:
+          receiptReasonMessage(payload) ??
+          "The required receipt details did not all match.",
+      };
     }
-    return { outcome: "unavailable", evidenceToken: null };
+    return {
+      outcome: "unavailable",
+      evidenceToken: null,
+      message:
+        receiptReasonMessage(payload) ??
+        "Receipt verification is temporarily unavailable.",
+    };
   } catch {
-    // Receipt analysis is optional. A provider/network failure must never
-    // strand a contributor; confirmation continues as self-reported.
-    return { outcome: "unavailable", evidenceToken: null };
+    return {
+      outcome: "unavailable",
+      evidenceToken: null,
+      message: "The receipt service did not respond.",
+    };
   }
+}
+
+function receiptReasonMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || !("reasons" in payload)) {
+    return null;
+  }
+  const reasons = (payload as { reasons?: unknown }).reasons;
+  if (!Array.isArray(reasons)) return null;
+  const reason = reasons.find(
+    (item): item is { message: string } =>
+      Boolean(
+        item &&
+          typeof item === "object" &&
+          "message" in item &&
+          typeof (item as { message?: unknown }).message === "string",
+      ),
+  );
+  return reason?.message ?? null;
 }

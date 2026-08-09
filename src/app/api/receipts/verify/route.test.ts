@@ -62,11 +62,12 @@ describe("POST /api/receipts/verify", () => {
     mocks.getTargetById.mockResolvedValue({
       id: "target-1",
       candidate: {
+        id: "candidate-1",
         fullName: "Brenden H. Jones",
         committeeName: "Committee to Elect Brenden Jones",
         platform: "ANEDOT",
         donationUrl: "https://secure.anedot.com/example/donate",
-        donationUrlVerifiedAt: new Date().toISOString(),
+        donationUrlVerifiedAt: null,
       },
     });
     mocks.recordReceiptReview.mockResolvedValue(true);
@@ -90,7 +91,7 @@ describe("POST /api/receipts/verify", () => {
       status: "ai_checked",
       receiptBacked: true,
       aiChecked: true,
-      canSelfReport: true,
+      canSelfReport: false,
     });
     expect(payload.evidenceToken).toEqual(expect.any(String));
     expect(payload).not.toHaveProperty("extracted");
@@ -112,9 +113,35 @@ describe("POST /api/receipts/verify", () => {
       receiptBacked: false,
       aiChecked: false,
       evidenceToken: null,
-      canSelfReport: true,
+      canSelfReport: false,
     });
     expect(mocks.extractReceiptWithOpenAI).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on an inconclusive or mismatching receipt", async () => {
+    mocks.extractReceiptWithOpenAI.mockResolvedValue({
+      documentType: "contribution_receipt",
+      paymentStatus: "completed",
+      processor: "ANEDOT",
+      candidateName: "Different Candidate",
+      committeeName: "Different Committee",
+      amountCents: 25_000,
+      contributionDate: new Date().toISOString().slice(0, 10),
+      legibility: "clear",
+    });
+
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: "needs_review",
+      receiptBacked: false,
+      aiChecked: true,
+      canSelfReport: false,
+      evidenceToken: null,
+    });
+    expect(mocks.recordReceiptReview).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "AI_NEEDS_REVIEW" }),
+    );
   });
 
   it("requires affirmative consent before reading the screenshot", async () => {

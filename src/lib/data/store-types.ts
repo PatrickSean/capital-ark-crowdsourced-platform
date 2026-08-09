@@ -1,5 +1,4 @@
 import type {
-  ContributionEvidenceType,
   Jurisdiction,
   Party,
   Platform,
@@ -17,7 +16,7 @@ import type {
 
 export interface PledgeConfirmationContext {
   pledge: PledgeView;
-  candidate: Pick<CandidateView, "jurisdiction" | "state">;
+  candidate: Pick<CandidateView, "id" | "jurisdiction" | "state">;
 }
 
 export interface CreatePledgeInput {
@@ -49,15 +48,15 @@ export interface ReceiptReviewInput {
 
 export interface ReceiptEvidenceInput extends ReceiptReviewInput {
   evidenceHash: string;
+  targetId: string;
+  candidateId: string;
+  amountCents: number;
 }
 
 export interface ConfirmPledgeInput {
   pledgeId: string;
   userId: string;
   confirmedAmountCents?: number | null;
-  ocrAmountCents?: number | null;
-  receiptUrl?: string | null;
-  evidenceType?: ContributionEvidenceType | null;
   receiptEvidence?: ReceiptEvidenceInput | null;
   attestationVersion: string;
   declined?: boolean;

@@ -18,7 +18,7 @@ describe("public activity views", () => {
       20,
     );
 
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(2);
     expect(
       items.every((item) => item.targetSlug === "webb-senate-push"),
     ).toBe(true);
@@ -33,7 +33,7 @@ describe("public activity views", () => {
         (item) =>
           item.evidenceType === ContributionEvidenceType.SELF_REPORTED,
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(items.every((item) => !("actorLabel" in item))).toBe(true);
   });
 

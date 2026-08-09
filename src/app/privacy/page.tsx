@@ -53,8 +53,9 @@ export default async function PrivacyPage() {
               separately from information independently reviewed by Capital Ark.
             </p>
             <p>
-              If you return and confirm, Capital Ark stores the amount you say
-              you contributed, the required attestation version, and the time.
+              If you return and verify a contribution, Capital Ark stores the
+              receipt-backed amount, required attestation version, review
+              result, and time.
               The recipient committee&rsquo;s processor—not Capital Ark—collects
               and processes your payment information.
             </p>
@@ -62,20 +63,19 @@ export default async function PrivacyPage() {
 
           <PolicySection title="Receipts and accounts">
             <p>
-              Receipt upload and account claiming are available only when the
-              secure account-and-storage service is enabled. Receipt OCR runs
-              in your browser. If you choose to attach a receipt, its private
-              storage key is associated with your pledge; receipts are never
-              public. If you claim an account, the authentication provider may
-              store your email address and session information.
+              To add a contribution to public progress, you must upload one
+              PNG, JPEG, or WebP image of the completed contribution receipt
+              and consent to a one-time automated consistency check. Crop the
+              image to the receipt and hide donor names, addresses, email
+              addresses, and card digits, while leaving the recipient,
+              processor, amount, completed status, and date visible.
             </p>
             <p>
-              If optional AI receipt checking is available, it runs only after
-              you affirmatively choose it. Before submitting, crop the image to
-              the receipt and hide donor names, addresses, email addresses, and
-              card digits. Capital Ark sends that screenshot to OpenAI for a
-              one-time consistency check. Self-reporting remains available
-              without sending an image to OpenAI.
+              Capital Ark sends the screenshot to OpenAI only after that
+              consent. If the visible receipt details cannot be confidently
+              matched, the contribution is not added; you can crop a clearer
+              image or try another receipt. There is no receipt-free
+              self-reporting path.
             </p>
             <p>
               Capital Ark does not save the raw screenshot on the AI-checking
@@ -94,6 +94,11 @@ export default async function PrivacyPage() {
               match is not conclusive proof that a committee accepted a
               contribution.
             </p>
+            <p>
+              If you later claim an account, the authentication provider may
+              store your email address and session information. Account details
+              are kept separate from public receipt activity.
+            </p>
           </PolicySection>
 
           <PolicySection title="How information is used and shared">
@@ -110,8 +115,8 @@ export default async function PrivacyPage() {
               processor&rsquo;s own privacy policy applies.
             </p>
             <p>
-              OpenAI acts as an infrastructure provider only when you choose
-              optional AI receipt checking. Capital Ark does not use receipt
+              OpenAI acts as an infrastructure provider only when you submit a
+              receipt for checking. Capital Ark does not use receipt
               images to generate political messaging, target supporters, or
               train its own models.
             </p>

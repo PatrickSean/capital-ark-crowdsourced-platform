@@ -32,10 +32,12 @@ enum Jurisdiction {
 enum PledgeStatus {
   /// Link generated and clicked out; the user has not told us what happened.
   PENDING
-  /// Self-attested with no receipt attached.
+  /// Historical receipt-free self-reports. Retained for audit/history only;
+  /// new confirmations never write this status and public totals exclude it.
   UNVERIFIED
-  /// Receipt-backed: securely attached or passed the optional AI consistency
-  /// check. This is not confirmation from committee records.
+  /// Receipt-backed: a legacy securely attached receipt or a receipt whose
+  /// visible fields passed the required automated consistency check. This is
+  /// not confirmation from committee records.
   COMPLETED
   /// User explicitly told us they did not contribute.
   DECLINED
@@ -79,16 +81,17 @@ enum ActivityType {
   MEMBER_JOINED
 }
 
-/// Public evidence language for a supporter-reported contribution. This is
-/// separate from payment processing: Capital Ark never handles the payment.
+/// Public evidence language for a contribution. Capital Ark never handles the
+/// payment. SELF_REPORTED is a historical value that is no longer written or
+/// exposed in public progress/activity.
 enum ContributionEvidenceType {
   SELF_REPORTED
   RECEIPT_ATTACHED
   RECEIPT_AI_CHECKED
 }
 
-/// Outcome of the optional automated consistency check. `AI_CHECKED_MATCH`
-/// is still not proof of payment; it means visible receipt fields passed the
+/// Outcome of the required automated consistency check. `AI_CHECKED_MATCH` is
+/// still not proof of payment; it means visible receipt fields passed the
 /// server's deterministic recipient, amount, processor, and date gates.
 enum ReceiptCheckStatus {
   NOT_REQUESTED
@@ -276,10 +279,12 @@ model Pledge {
 
   /// What the user set out to give, captured when the link was generated.
   amountCents          Int  @map("amount_cents")
-  /// What the user attests they actually gave. May differ from the intent.
+  /// Amount the contributor enters and the receipt check must match. May
+  /// differ from the original outbound intent.
   confirmedAmountCents Int? @map("confirmed_amount_cents")
-  /// What OCR read off the uploaded receipt. Advisory only; the user's own
-  /// attested figure always wins, since OCR is best-effort.
+  /// Historical advisory OCR amount. New receipt verification stores the
+  /// extracted amount in receiptExtractedAmountCents and requires an exact
+  /// match before completion.
   ocrAmountCents       Int? @map("ocr_amount_cents")
 
   status          PledgeStatus @default(PENDING)
@@ -288,8 +293,8 @@ model Pledge {
   /// Client-generated UUID for idempotent no-click contribution reports.
   clientRequestId String? @map("client_request_id") @db.Uuid
 
-  /// Public trust tier assigned at confirmation. Null while the pledge is
-  /// pending or declined.
+  /// Public receipt-evidence tier assigned at confirmation. Null while the
+  /// pledge is pending or declined. SELF_REPORTED remains historical only.
   evidenceType ContributionEvidenceType? @map("evidence_type")
 
   /// Object key in a private bucket. Served only through short-lived signed
@@ -312,11 +317,11 @@ model Pledge {
   receiptDatePlausible        Boolean?           @map("receipt_date_plausible")
   receiptCheckReasons         String[]           @default([]) @map("receipt_check_reasons")
 
-  /// Whether the pledger was still anonymous at pledge time. Drives the
-  /// confirmed-vs-attested split in the progress bar.
+  /// Whether the pledger was still anonymous at pledge time. Retained for
+  /// identity/account audit; public progress never reveals contributor names.
   isAnonymousAtPledge Boolean @default(true) @map("is_anonymous_at_pledge")
 
-  /// Audit trail for the self-attestation. `attestationVersion` pins which
+  /// Audit trail for the legal attestation. `attestationVersion` pins which
   /// legal text the user actually agreed to on that date.
   attestedAt         DateTime? @map("attested_at")
   attestationVersion String?   @map("attestation_version")

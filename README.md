@@ -36,11 +36,11 @@ instant attention comes back. To the user this is indistinguishable from
 watching the transaction, and it carries no anti-phishing or terms-of-service
 risk.
 
-**The progress bar shows its own confidence.** Every figure is crowdsourced
-from what contributors report afterwards, so collapsing it into one number
-would be dishonest. The bar has three segments: receipt-backed, self-reported,
-and clicked-out-but-unresolved. The last is hatched, not just tinted, so the
-distinction survives colour blindness and greyscale.
+**The progress bar shows its own confidence.** Confirmed progress comes only
+from contributor receipts whose visible recipient, processor, amount,
+completed status, and date pass the server's consistency checks. Clicked-out
+but unresolved amounts remain a separate hatched segment and never count as
+raised.
 
 ## Zero-signup contributing
 
@@ -56,9 +56,8 @@ before — the success screen offers an account. Linking an email via
 migration.
 
 Abuse control that doesn't tax the common case: anonymous sign-ins carry a
-Cloudflare Turnstile token, `generate-link` is rate limited per identity and
-per IP hash, and anonymous self-attestations land in the lower-trust segment
-of the bar.
+Cloudflare Turnstile token, link generation and receipt review are rate limited
+per identity and IP hash, and one receipt cannot back multiple pledges.
 
 ## Auto-charge parameters are blocked
 
@@ -128,7 +127,7 @@ the fictional processor examples.
 Supabase is optional. Set `NEXT_PUBLIC_AUTH_MODE=local` for the initial
 DigitalOcean deployment: anonymous visitor identities and pledge progress are
 persisted in PostgreSQL, while email account claiming and long-lived private
-receipt storage stay hidden. Optional AI receipt checking does not require
+receipt storage stay hidden. Required AI receipt checking does not require
 Supabase: the screenshot stays in request memory, is sent to OpenAI only after
 explicit consent, and is discarded after the check. If you later switch to
 Supabase, set the mode to `supabase`, configure Auth and private Storage, and
@@ -136,21 +135,22 @@ then apply `prisma/sql/rls.sql` in the Supabase SQL Editor. That SQL is
 Supabase-specific and must not be run against a generic DigitalOcean PostgreSQL
 database.
 
-## Optional AI receipt checking
+## Required receipt verification
 
-Set the encrypted, server-only `OPENAI_API_KEY` to offer an optional screenshot
-consistency check. `OPENAI_RECEIPT_MODEL` defaults to `gpt-5-mini`, and
+Set the encrypted, server-only `OPENAI_API_KEY` to enable receipt-backed
+confirmation. `OPENAI_RECEIPT_MODEL` defaults to `gpt-5-mini`, and
 `OPENAI_RECEIPT_IMAGE_DETAIL` defaults to `high`. The feature is capability
-detected at runtime; a missing key is not a health-check failure and never
-blocks self-reporting.
+detected at runtime. If the key or provider is unavailable, confirmation fails
+closed and no contribution is added to public progress.
 
 The endpoint accepts one PNG, JPEG, or WebP image up to 8 MB. It validates the
 container signature, rate-limits by visitor and hashed IP, sends the image with
 `store: false`, and requests strict structured output. The model extracts fields
 without receiving the expected candidate, committee, or amount. Server code
 then independently matches recipient, processor, exact amount, and a plausible
-date. Ambiguous or mismatching results remain self-reported. A full match earns
-the label `AI-checked receipt`, not `verified contribution`.
+date. Ambiguous or mismatching results require a clearer or different receipt;
+they never fall back to receipt-free reporting. A full match earns the label
+`AI-checked receipt`, not `verified contribution`.
 
 Capital Ark does not persist the raw screenshot on this path. It retains only
 the model name, controlled reason codes, extracted amount/date, match flags, and

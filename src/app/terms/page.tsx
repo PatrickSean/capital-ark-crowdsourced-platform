@@ -31,7 +31,7 @@ export default async function TermsPage() {
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-600 sm:text-base">
           These terms describe the boundaries of Capital Ark&rsquo;s software.
           Using the site means you agree to use it lawfully and to provide
-          accurate information when you report a contribution.
+          accurate information when you submit a contribution receipt.
         </p>
 
         <Card className="mt-6 p-5 sm:p-6">
@@ -44,17 +44,19 @@ export default async function TermsPage() {
               campaign, committee, coalition, or processor.
             </Term>
             <Term title="Crowdsourced figures are not official totals">
-              Progress comes from contributor confirmations and optional
-              receipt evidence. It is not reconciled with committee records and
-              must not be presented as an official campaign-finance report,
-              committee balance, or guarantee that a processor accepted funds.
+              Progress comes from contributor-submitted receipts that pass an
+              automated consistency check. It is not reconciled with committee
+              records and must not be presented as an official campaign-finance
+              report, committee balance, or guarantee that a processor accepted
+              funds.
             </Term>
             <Term title="Contributor responsibilities">
               You are responsible for meeting citizenship, source-of-funds,
               age, contribution-limit, lobbyist, contractor, and other rules
               that apply to you and the recipient. Use your own information and
-              report only a contribution you actually made. The committee and
-              its processor make the final eligibility and acceptance decision.
+              submit a receipt only for a contribution you actually made. The
+              committee and its processor make the final eligibility and
+              acceptance decision.
             </Term>
             <Term title="Organizer and content responsibilities">
               Community-created drives are labeled as unverified unless and

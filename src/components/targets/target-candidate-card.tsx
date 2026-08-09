@@ -16,9 +16,7 @@ import { isAiReceiptReviewConfigured } from "@/lib/receipts/config";
  */
 export function TargetCandidateCard({ target }: { target: TargetView }) {
   const { candidate, progress } = target;
-  const receiptReviewAvailable =
-    isAiReceiptReviewConfigured() &&
-    Boolean(target.candidate.donationUrlVerifiedAt);
+  const receiptReviewAvailable = isAiReceiptReviewConfigured();
 
   return (
     <Card className="flex h-full flex-col gap-5 p-5">

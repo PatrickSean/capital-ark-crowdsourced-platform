@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { isDemoMode } from "@/lib/data";
-import { isSupabaseConfigured } from "@/lib/auth/config";
 import { SiteHeader } from "@/components/layout/site-header";
 import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
 import { Card } from "@/components/ui/primitives";
@@ -63,13 +62,15 @@ export default async function CompliancePage() {
           </p>
           <p className="mt-3 text-sm leading-relaxed text-ink-700">
             Because of that, we also have no way to observe whether a
-            contribution succeeded. Every figure on this site comes from what
-            contributors tell us afterwards.
+            contribution succeeded from the processor itself. A contribution
+            moves the public total only after the supporter uploads a receipt
+            and its visible recipient, processor, amount, completed status,
+            and date pass Capital Ark&rsquo;s consistency checks.
           </p>
           <p className="mt-3 text-sm leading-relaxed text-ink-700">
-            {isSupabaseConfigured
-              ? "When optional receipt upload is enabled, the progress bar separates receipt-backed amounts from self-reported ones."
-              : "In the current launch mode, confirmed contributions are shown as self-reported; receipt upload is not enabled."}
+            A matched receipt is supporting evidence, not confirmation from a
+            campaign committee or payment processor. If a receipt cannot be
+            matched, the contribution is not added to public progress.
           </p>
         </Card>
 

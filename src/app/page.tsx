@@ -12,7 +12,6 @@ import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
 import { CoalitionVerificationBadge } from "@/components/coalitions/coalition-verification-badge";
 import { Card, relativeTime } from "@/components/ui/primitives";
 import { LayeredProgressBar } from "@/components/targets/layered-progress-bar";
-import { isSupabaseConfigured } from "@/lib/auth/config";
 
 export const dynamic = "force-dynamic";
 
@@ -106,11 +105,7 @@ export default async function HomePage() {
             <HowItWorks
               step="3"
               title="Watch the bar move"
-              body={
-                isSupabaseConfigured
-                  ? "Contributors confirm what they gave when they return. Optional receipts distinguish receipt-backed amounts from self-reports."
-                  : "Contributors confirm what they gave when they return. The total is clearly labeled as self-reported."
-              }
+              body="Supporters upload a receipt after contributing. Only receipts that match the recipient, processor, amount, and date move the public total."
             />
           </div>
         </section>

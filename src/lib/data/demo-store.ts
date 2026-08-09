@@ -28,7 +28,9 @@ import type {
 import {
   IdempotencyConflictError,
   ReceiptEvidenceReuseError,
+  ReceiptVerificationRequiredError,
 } from "./errors";
+import { isAcceptedReceiptEvidenceFor } from "@/lib/receipts/accepted-evidence";
 
 /**
  * In-memory store backing demo mode.
@@ -300,6 +302,7 @@ function progressFor(targetId: string): ProgressSnapshot {
       amountCents: p.amountCents,
       confirmedAmountCents: p.confirmedAmountCents,
       userId: p.userId,
+      evidenceType: p.evidenceType,
     }));
 
   return computeProgress(target.goalCents, target.deadline, rows);
@@ -378,6 +381,14 @@ function toActivityItem(activity: ActivityRecord): ActivityItem {
   };
 }
 
+function isPublicActivity(activity: ActivityRecord): boolean {
+  return (
+    activity.type !== ActivityType.PLEDGE_CONFIRMED ||
+    activity.evidenceType === ContributionEvidenceType.RECEIPT_ATTACHED ||
+    activity.evidenceType === ContributionEvidenceType.RECEIPT_AI_CHECKED
+  );
+}
+
 export const demoStore: Store = {
   isDemo: true,
 
@@ -429,14 +440,16 @@ export const demoStore: Store = {
 
   async listActivity(coalitionId, limit = 20) {
     return state.activity
-      .filter((a) => a.coalitionId === coalitionId)
+      .filter(
+        (a) => a.coalitionId === coalitionId && isPublicActivity(a),
+      )
       .slice(0, limit)
       .map(toActivityItem);
   },
 
   async listActivityForTarget(targetId, limit = 20) {
     return state.activity
-      .filter((a) => a.targetId === targetId)
+      .filter((a) => a.targetId === targetId && isPublicActivity(a))
       .slice(0, limit)
       .map(toActivityItem);
   },
@@ -512,6 +525,7 @@ export const demoStore: Store = {
     return {
       pledge: toPledgeView(pledge),
       candidate: {
+        id: candidate.id,
         jurisdiction: candidate.jurisdiction,
         state: candidate.state,
       },
@@ -549,52 +563,58 @@ export const demoStore: Store = {
       return toPledgeView(pledge);
     }
 
+    const target = state.targets.get(pledge.targetId);
+    const candidate = target
+      ? state.candidates.get(target.candidateId)
+      : null;
+    const confirmedAmountCents =
+      input.confirmedAmountCents ?? pledge.amountCents;
+    const receiptEvidence = input.receiptEvidence;
     if (
-      input.receiptEvidence &&
+      !target ||
+      !candidate ||
+      !isAcceptedReceiptEvidenceFor(receiptEvidence, {
+        pledgeId: pledge.id,
+        userId: pledge.userId,
+        targetId: target.id,
+        candidateId: candidate.id,
+        amountCents: confirmedAmountCents,
+      })
+    ) {
+      throw new ReceiptVerificationRequiredError();
+    }
+
+    if (
       [...state.pledges.values()].some(
         (other) =>
           other.id !== pledge.id &&
-          other.receiptEvidenceHash === input.receiptEvidence?.evidenceHash,
+          other.receiptEvidenceHash === receiptEvidence.evidenceHash,
       )
     ) {
       throw new ReceiptEvidenceReuseError();
     }
 
-    pledge.confirmedAmountCents =
-      input.confirmedAmountCents ?? pledge.amountCents;
-    pledge.ocrAmountCents = input.ocrAmountCents ?? null;
-    pledge.receiptUrl = input.receiptUrl ?? null;
-    pledge.evidenceType =
-      input.evidenceType ??
-      (input.receiptUrl
-        ? ContributionEvidenceType.RECEIPT_ATTACHED
-        : ContributionEvidenceType.SELF_REPORTED);
-    if (input.receiptEvidence) {
-      applyReceiptReview(pledge, input.receiptEvidence);
-      pledge.receiptEvidenceHash = input.receiptEvidence.evidenceHash;
-    }
-    pledge.status =
-      pledge.evidenceType === ContributionEvidenceType.RECEIPT_ATTACHED ||
-      pledge.evidenceType === ContributionEvidenceType.RECEIPT_AI_CHECKED
-        ? PledgeStatus.COMPLETED
-        : PledgeStatus.UNVERIFIED;
+    pledge.confirmedAmountCents = confirmedAmountCents;
+    pledge.ocrAmountCents = null;
+    pledge.receiptUrl = null;
+    pledge.evidenceType = ContributionEvidenceType.RECEIPT_AI_CHECKED;
+    applyReceiptReview(pledge, receiptEvidence);
+    pledge.receiptEvidenceHash = receiptEvidence.evidenceHash;
+    pledge.status = PledgeStatus.COMPLETED;
     pledge.attestedAt = new Date();
     pledge.attestationVersion = input.attestationVersion;
 
-    const target = state.targets.get(pledge.targetId);
-    if (target) {
-      state.activity.unshift({
-        id: crypto.randomUUID(),
-        coalitionId: target.coalitionId,
-        targetId: target.id,
-        type: ActivityType.PLEDGE_CONFIRMED,
-        evidenceType: pledge.evidenceType,
-        actorLabel: null,
-        amountCents: pledge.confirmedAmountCents,
-        message: null,
-        createdAt: new Date(),
-      });
-    }
+    state.activity.unshift({
+      id: crypto.randomUUID(),
+      coalitionId: target.coalitionId,
+      targetId: target.id,
+      type: ActivityType.PLEDGE_CONFIRMED,
+      evidenceType: ContributionEvidenceType.RECEIPT_AI_CHECKED,
+      actorLabel: null,
+      amountCents: pledge.confirmedAmountCents,
+      message: null,
+      createdAt: new Date(),
+    });
 
     return toPledgeView(pledge);
   },

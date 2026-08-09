@@ -32,7 +32,9 @@ import type {
 import {
   IdempotencyConflictError,
   ReceiptEvidenceReuseError,
+  ReceiptVerificationRequiredError,
 } from "./errors";
+import { isAcceptedReceiptEvidenceFor } from "@/lib/receipts/accepted-evidence";
 
 type CoalitionRow = {
   id: string;
@@ -119,11 +121,23 @@ const targetInclude = (cutoff: Date): Prisma.FundraisingTargetInclude => ({
     candidate: true,
     pledges: {
       // A failed maintenance sweep must never leave stale intents visible in
-      // public totals. Resolved rows are retained; old PENDING rows are not.
+      // public totals. Receipt-backed resolved rows are included; historical
+      // self-reports and old PENDING rows are not.
       where: {
         OR: [
-          { status: { not: PledgeStatus.PENDING } },
-          { createdAt: { gte: cutoff } },
+          {
+            status: PledgeStatus.COMPLETED,
+            evidenceType: {
+              in: [
+                ContributionEvidenceType.RECEIPT_ATTACHED,
+                ContributionEvidenceType.RECEIPT_AI_CHECKED,
+              ],
+            },
+          },
+          {
+            status: PledgeStatus.PENDING,
+            createdAt: { gte: cutoff },
+          },
         ],
       },
       select: {
@@ -131,6 +145,7 @@ const targetInclude = (cutoff: Date): Prisma.FundraisingTargetInclude => ({
         amountCents: true,
         confirmedAmountCents: true,
         userId: true,
+        evidenceType: true,
       },
     },
   });
@@ -151,6 +166,7 @@ type TargetWithRelations = {
     amountCents: number;
     confirmedAmountCents: number | null;
     userId: string;
+    evidenceType: ContributionEvidenceType | null;
   }[];
 };
 
@@ -351,8 +367,19 @@ export function createPrismaStore(prisma: PrismaClient): Store {
         where: {
           targetId,
           OR: [
-            { status: { not: PledgeStatus.PENDING } },
-            { createdAt: { gte: cutoff } },
+            {
+              status: PledgeStatus.COMPLETED,
+              evidenceType: {
+                in: [
+                  ContributionEvidenceType.RECEIPT_ATTACHED,
+                  ContributionEvidenceType.RECEIPT_AI_CHECKED,
+                ],
+              },
+            },
+            {
+              status: PledgeStatus.PENDING,
+              createdAt: { gte: cutoff },
+            },
           ],
         },
         _sum: { amountCents: true, confirmedAmountCents: true },
@@ -361,7 +388,13 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       const donors = await prisma.pledge.findMany({
         where: {
           targetId,
-          status: { in: [PledgeStatus.COMPLETED, PledgeStatus.UNVERIFIED] },
+          status: PledgeStatus.COMPLETED,
+          evidenceType: {
+            in: [
+              ContributionEvidenceType.RECEIPT_ATTACHED,
+              ContributionEvidenceType.RECEIPT_AI_CHECKED,
+            ],
+          },
         },
         select: { userId: true },
         distinct: ["userId"],
@@ -378,9 +411,9 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       };
 
       const confirmedCents = sumFor(PledgeStatus.COMPLETED, true);
-      const attestedCents = sumFor(PledgeStatus.UNVERIFIED, true);
+      const attestedCents = 0;
       const pendingCents = sumFor(PledgeStatus.PENDING, false);
-      const raisedCents = confirmedCents + attestedCents;
+      const raisedCents = confirmedCents;
 
       return {
         goalCents: target.goalCents,
@@ -402,7 +435,21 @@ export function createPrismaStore(prisma: PrismaClient): Store {
 
     async listActivity(coalitionId, limit = 20) {
       const rows = await prisma.activityEvent.findMany({
-        where: { coalitionId },
+        where: {
+          coalitionId,
+          OR: [
+            { type: { not: ActivityType.PLEDGE_CONFIRMED } },
+            {
+              type: ActivityType.PLEDGE_CONFIRMED,
+              evidenceType: {
+                in: [
+                  ContributionEvidenceType.RECEIPT_ATTACHED,
+                  ContributionEvidenceType.RECEIPT_AI_CHECKED,
+                ],
+              },
+            },
+          ],
+        },
         include: { target: { include: { candidate: true } } },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take: limit,
@@ -413,7 +460,21 @@ export function createPrismaStore(prisma: PrismaClient): Store {
 
     async listActivityForTarget(targetId, limit = 20) {
       const rows = await prisma.activityEvent.findMany({
-        where: { targetId },
+        where: {
+          targetId,
+          OR: [
+            { type: { not: ActivityType.PLEDGE_CONFIRMED } },
+            {
+              type: ActivityType.PLEDGE_CONFIRMED,
+              evidenceType: {
+                in: [
+                  ContributionEvidenceType.RECEIPT_ATTACHED,
+                  ContributionEvidenceType.RECEIPT_AI_CHECKED,
+                ],
+              },
+            },
+          ],
+        },
         include: { target: { include: { candidate: true } } },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take: limit,
@@ -484,6 +545,7 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       return {
         pledge: toPledgeView(row),
         candidate: {
+          id: row.target.candidate.id,
           jurisdiction: row.target.candidate.jurisdiction,
           state: row.target.candidate.state,
         },
@@ -505,95 +567,99 @@ export function createPrismaStore(prisma: PrismaClient): Store {
     async confirmPledge(input: ConfirmPledgeInput) {
       try {
         return await prisma.$transaction(async (tx) => {
-        const existing = await tx.pledge.findUnique({
-          where: { id: input.pledgeId },
-          include: { target: true },
-        });
-
-        if (!existing || existing.userId !== input.userId) return null;
-
-        // A repeated request returns the first result. More importantly, the
-        // conditional update below also makes two simultaneous first requests
-        // race for one PENDING row; only the winner may write an activity event.
-        if (existing.status !== PledgeStatus.PENDING) {
-          return toPledgeView(existing);
-        }
-
-        const confirmedAmountCents =
-          input.confirmedAmountCents ?? existing.amountCents;
-        const evidenceType = input.declined
-          ? null
-          : (input.evidenceType ??
-            (input.receiptUrl
-              ? ContributionEvidenceType.RECEIPT_ATTACHED
-              : ContributionEvidenceType.SELF_REPORTED));
-        const status = input.declined
-          ? PledgeStatus.DECLINED
-          : evidenceType === ContributionEvidenceType.RECEIPT_ATTACHED ||
-              evidenceType === ContributionEvidenceType.RECEIPT_AI_CHECKED
-            ? PledgeStatus.COMPLETED
-            : PledgeStatus.UNVERIFIED;
-
-        if (input.receiptEvidence) {
-          const duplicate = await tx.pledge.findFirst({
-            where: {
-              receiptEvidenceHash: input.receiptEvidence.evidenceHash,
-              NOT: { id: input.pledgeId },
-            },
-            select: { id: true },
+          const existing = await tx.pledge.findUnique({
+            where: { id: input.pledgeId },
+            include: { target: { include: { candidate: true } } },
           });
-          if (duplicate) throw new ReceiptEvidenceReuseError();
-        }
 
-        const claimed = await tx.pledge.updateMany({
-          where: {
-            id: input.pledgeId,
-            userId: input.userId,
-            status: PledgeStatus.PENDING,
-          },
-          data: input.declined
-            ? { status }
-            : {
-                confirmedAmountCents,
-                ocrAmountCents: input.ocrAmountCents ?? null,
-                receiptUrl: input.receiptUrl ?? null,
-                evidenceType,
-                ...(input.receiptEvidence
-                  ? {
-                      ...receiptReviewData(input.receiptEvidence),
-                      receiptEvidenceHash:
-                        input.receiptEvidence.evidenceHash,
-                    }
-                  : {}),
-                status,
-                attestedAt: new Date(),
-                attestationVersion: input.attestationVersion,
-              },
-        });
+          if (!existing || existing.userId !== input.userId) return null;
 
-        if (claimed.count === 0) {
-          const resolved = await tx.pledge.findFirst({
-            where: { id: input.pledgeId, userId: input.userId },
-          });
-          return resolved ? toPledgeView(resolved) : null;
-        }
+          // A repeated request returns the first result. More importantly, the
+          // conditional update below also makes two simultaneous first requests
+          // race for one PENDING row; only the winner may write an activity event.
+          if (existing.status !== PledgeStatus.PENDING) {
+            return toPledgeView(existing);
+          }
 
-        if (!input.declined) {
-          await tx.activityEvent.create({
-            data: {
-              coalitionId: existing.target.coalitionId,
+          const confirmedAmountCents =
+            input.confirmedAmountCents ?? existing.amountCents;
+          const status = input.declined
+            ? PledgeStatus.DECLINED
+            : PledgeStatus.COMPLETED;
+
+          if (
+            !input.declined &&
+            !isAcceptedReceiptEvidenceFor(input.receiptEvidence, {
+              pledgeId: existing.id,
+              userId: existing.userId,
               targetId: existing.targetId,
-              type: ActivityType.PLEDGE_CONFIRMED,
-              evidenceType,
+              candidateId: existing.target.candidateId,
               amountCents: confirmedAmountCents,
-            },
-          });
-        }
+            })
+          ) {
+            throw new ReceiptVerificationRequiredError();
+          }
 
-        const updated = await tx.pledge.findUnique({
-          where: { id: input.pledgeId },
-        });
-        return updated ? toPledgeView(updated) : null;
+          if (input.receiptEvidence) {
+            const duplicate = await tx.pledge.findFirst({
+              where: {
+                receiptEvidenceHash: input.receiptEvidence.evidenceHash,
+                NOT: { id: input.pledgeId },
+              },
+              select: { id: true },
+            });
+            if (duplicate) throw new ReceiptEvidenceReuseError();
+          }
+
+          const claimed = await tx.pledge.updateMany({
+            where: {
+              id: input.pledgeId,
+              userId: input.userId,
+              status: PledgeStatus.PENDING,
+            },
+            data: input.declined
+              ? { status }
+              : {
+                  confirmedAmountCents,
+                  ocrAmountCents: null,
+                  receiptUrl: null,
+                  evidenceType: ContributionEvidenceType.RECEIPT_AI_CHECKED,
+                  ...(input.receiptEvidence
+                    ? {
+                        ...receiptReviewData(input.receiptEvidence),
+                        receiptEvidenceHash:
+                          input.receiptEvidence.evidenceHash,
+                      }
+                    : {}),
+                  status,
+                  attestedAt: new Date(),
+                  attestationVersion: input.attestationVersion,
+                },
+          });
+
+          if (claimed.count === 0) {
+            const resolved = await tx.pledge.findFirst({
+              where: { id: input.pledgeId, userId: input.userId },
+            });
+            return resolved ? toPledgeView(resolved) : null;
+          }
+
+          if (!input.declined) {
+            await tx.activityEvent.create({
+              data: {
+                coalitionId: existing.target.coalitionId,
+                targetId: existing.targetId,
+                type: ActivityType.PLEDGE_CONFIRMED,
+                evidenceType: ContributionEvidenceType.RECEIPT_AI_CHECKED,
+                amountCents: confirmedAmountCents,
+              },
+            });
+          }
+
+          const updated = await tx.pledge.findUnique({
+            where: { id: input.pledgeId },
+          });
+          return updated ? toPledgeView(updated) : null;
         });
       } catch (error) {
         if (

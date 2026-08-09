@@ -11,3 +11,10 @@ export class ReceiptEvidenceReuseError extends Error {
     this.name = "ReceiptEvidenceReuseError";
   }
 }
+
+export class ReceiptVerificationRequiredError extends Error {
+  constructor() {
+    super("A matching AI-reviewed receipt is required to confirm a contribution.");
+    this.name = "ReceiptVerificationRequiredError";
+  }
+}

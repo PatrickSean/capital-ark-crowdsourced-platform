@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
 const AmountSchema = z.coerce.number().int().positive().max(100_000_00);
 const NO_STORE = { "cache-control": "no-store" };
 const DISCLAIMER =
-  "AI checking is an automated consistency check, not conclusive proof that a contribution was made or accepted by the committee.";
+  "Receipt verification is an automated consistency check, not confirmation from the recipient committee.";
 
 class ReceiptRequestTooLargeError extends Error {}
 
@@ -146,13 +146,12 @@ export async function POST(request: Request) {
     !isNormalizedDonationUrlForPlatform(
       target.candidate.donationUrl,
       target.candidate.platform,
-    ) ||
-    !target.candidate.donationUrlVerifiedAt
+    )
   ) {
     return jsonError(
       409,
       "receipt_context_unavailable",
-      "This recipient does not have enough verified processor information for receipt checking.",
+      "This recipient does not have a supported contribution processor for receipt verification.",
     );
   }
 
@@ -183,7 +182,7 @@ export async function POST(request: Request) {
     });
     return unavailable(
       "ai_not_configured",
-      "AI receipt checking isn't available right now. You can still self-report your contribution.",
+      "Receipt verification isn't available right now. Please try again later.",
     );
   }
 
@@ -198,7 +197,7 @@ export async function POST(request: Request) {
     });
     return unavailable(
       "secure_token_unavailable",
-      "Receipt checking isn't available right now. You can still self-report your contribution.",
+      "Receipt verification isn't available right now. Please try again later.",
     );
   }
 
@@ -261,7 +260,7 @@ export async function POST(request: Request) {
     ) {
       return unavailable(
         "incomplete_review",
-        "The receipt check was incomplete. You can still self-report your contribution.",
+        "The receipt check was incomplete. Try again with a clearer screenshot showing the recipient, amount, date, and completed status.",
       );
     }
 
@@ -270,6 +269,7 @@ export async function POST(request: Request) {
         userId: user.id,
         pledgeId,
         targetId: target.id,
+        candidateId: target.candidate.id,
         amountCents: amount.data,
         evidenceHash: hashReceiptEvidence(bytes, secret),
         model: config.model,
@@ -321,7 +321,7 @@ export async function POST(request: Request) {
     });
     return unavailable(
       "ai_temporarily_unavailable",
-      "We couldn't check the receipt right now. You can still self-report your contribution.",
+      "We couldn't verify the receipt right now. Please try again in a moment.",
     );
   } finally {
     // Drop our reference as soon as the request finishes; raw receipt bytes are
@@ -348,7 +348,7 @@ function resultResponse(args: {
   return jsonOk(
     {
       ...args,
-      canSelfReport: true,
+      canSelfReport: false,
       disclaimer: DISCLAIMER,
     },
     { headers: NO_STORE },
@@ -361,7 +361,7 @@ function unavailable(code: string, message: string) {
       status: "unavailable" as const,
       receiptBacked: false,
       aiChecked: false,
-      canSelfReport: true,
+      canSelfReport: false,
       evidenceToken: null,
       reasons: [{ code, message }],
       disclaimer: DISCLAIMER,

@@ -50,16 +50,16 @@ export function ActivityFeed({
         </h2>
         <p className="mt-1.5 text-sm leading-relaxed text-ink-600">
           {scope === "target"
-            ? "Updates for this candidate appear here as supporters report them."
-            : "Updates across this drive appear here as supporters report them."}
+            ? "Receipt-checked updates for this candidate appear here."
+            : "Receipt-checked updates across this drive appear here."}
         </p>
 
         <div className="mt-4 flex items-start gap-2 rounded-xl bg-brand-50 px-3 py-2.5 text-xs leading-relaxed text-brand-900 ring-1 ring-brand-100 ring-inset">
           <PrivacyIcon />
           <p>
-            Contributor names and receipt details stay private. Activity is
-            crowdsourced; receipt labels describe evidence shared with Capital
-            Ark, not confirmation from a campaign processor.
+            Contributor names and receipt details stay private. Receipt labels
+            describe an automated consistency check, not confirmation from a
+            campaign processor.
           </p>
         </div>
 
@@ -67,12 +67,12 @@ export function ActivityFeed({
           <div className="mt-5 rounded-xl bg-ink-50 p-4 ring-1 ring-ink-100 ring-inset">
             <p className="text-sm font-semibold text-ink-800">
               {scope === "target"
-                ? "No support has been reported for this candidate yet."
-                : "No support has been reported yet."}
+                ? "No receipt-checked contributions for this candidate yet."
+                : "No receipt-checked contributions yet."}
             </p>
             <p className="mt-1 text-sm leading-relaxed text-ink-600">
-              The first contribution a supporter reports will appear here
-              without publishing their identity or receipt.
+              The first contribution with a matching receipt will appear here
+              without publishing the contributor&rsquo;s identity or receipt.
             </p>
           </div>
         ) : (
@@ -174,7 +174,7 @@ function renderContributionEvidence(item: ActivityItem) {
     );
   }
 
-  return <>reported {amount ? <>a {amount} contribution</> : "a contribution"}</>;
+  return <>{amount ? <>added a {amount} contribution update</> : "added a contribution update"}</>;
 }
 
 function CandidateReference({ item }: { item: ActivityItem }) {

@@ -1,4 +1,7 @@
-import { PledgeStatus } from "@/generated/prisma/enums";
+import {
+  ContributionEvidenceType,
+  PledgeStatus,
+} from "@/generated/prisma/enums";
 import type { ProgressSnapshot } from "@/lib/domain/types";
 import { percentOf } from "@/lib/money";
 
@@ -7,6 +10,7 @@ export interface ProgressInputRow {
   amountCents: number;
   confirmedAmountCents: number | null;
   userId: string;
+  evidenceType: ContributionEvidenceType | null;
 }
 
 /**
@@ -17,9 +21,9 @@ export interface ProgressInputRow {
  *
  *  - PENDING dollars are tracked but excluded from `raisedCents`. Someone
  *    clicking through to a donation page is not the same as money moving.
- *  - For resolved pledges we count what the user attested to, not what they
- *    originally intended, since people routinely give a different amount than
- *    the button they tapped.
+ *  - Only COMPLETED (receipt-verified) dollars contribute to public progress.
+ *    Historical UNVERIFIED self-reports remain in storage for audit/history,
+ *    but do not move totals or donor counts.
  */
 export function computeProgress(
   goalCents: number,
@@ -27,19 +31,24 @@ export function computeProgress(
   rows: ProgressInputRow[],
 ): ProgressSnapshot {
   let confirmedCents = 0;
-  let attestedCents = 0;
+  const attestedCents = 0;
   let pendingCents = 0;
   const donors = new Set<string>();
 
   for (const row of rows) {
     switch (row.status) {
       case PledgeStatus.COMPLETED:
+        if (
+          row.evidenceType !== ContributionEvidenceType.RECEIPT_ATTACHED &&
+          row.evidenceType !== ContributionEvidenceType.RECEIPT_AI_CHECKED
+        ) {
+          break;
+        }
         confirmedCents += row.confirmedAmountCents ?? row.amountCents;
         donors.add(row.userId);
         break;
       case PledgeStatus.UNVERIFIED:
-        attestedCents += row.confirmedAmountCents ?? row.amountCents;
-        donors.add(row.userId);
+        // Preserved historically, intentionally excluded from public totals.
         break;
       case PledgeStatus.PENDING:
         pendingCents += row.amountCents;
@@ -50,7 +59,7 @@ export function computeProgress(
     }
   }
 
-  const raisedCents = confirmedCents + attestedCents;
+  const raisedCents = confirmedCents;
 
   return {
     goalCents,

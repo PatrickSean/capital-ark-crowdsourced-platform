@@ -8,10 +8,9 @@ import type { ProgressSnapshot } from "@/lib/domain/types";
 /**
  * The layered progress bar.
  *
- * Three segments, ordered by how much we actually know:
+ * Two segments, ordered by how much we actually know:
  *
- *   receipt-backed — a receipt was attached or passed the optional AI check
- *   self-reported  — someone told us they gave, with nothing to back it
+ *   receipt-backed — a receipt passed the automated consistency check
  *   pending        — someone clicked through and we don't yet know the outcome
  *
  * Collapsing these into one number would be the easy thing and the dishonest
@@ -32,18 +31,16 @@ export function LayeredProgressBar({
   ariaLabel?: string;
   className?: string;
 }) {
-  const { goalCents, confirmedCents, attestedCents, pendingCents, raisedCents } =
-    progress;
+  const { goalCents, confirmedCents, pendingCents, raisedCents } = progress;
 
   const pct = (cents: number) =>
     goalCents > 0 ? Math.min(100, (cents / goalCents) * 100) : 0;
 
   const confirmedPct = pct(confirmedCents);
-  const attestedPct = pct(attestedCents);
   // Pending only fills whatever room is left, so the bar can never exceed 100%.
   const pendingPct = Math.max(
     0,
-    Math.min(pct(pendingCents), 100 - confirmedPct - attestedPct),
+    Math.min(pct(pendingCents), 100 - confirmedPct),
   );
 
   const animated = useCountUp(raisedCents);
@@ -82,11 +79,6 @@ export function LayeredProgressBar({
             title={`${formatCentsShort(confirmedCents)} receipt-backed`}
           />
           <Segment
-            widthPct={attestedPct}
-            className="bg-attested"
-            title={`${formatCentsShort(attestedCents)} self-reported`}
-          />
-          <Segment
             widthPct={pendingPct}
             className="bg-hatch opacity-70"
             title={`${formatCentsShort(pendingCents)} in progress`}
@@ -97,7 +89,6 @@ export function LayeredProgressBar({
       {showLegend && (
         <Legend
           confirmedCents={confirmedCents}
-          attestedCents={attestedCents}
           pendingCents={pendingCents}
         />
       )}
@@ -126,11 +117,9 @@ function Segment({
 
 function Legend({
   confirmedCents,
-  attestedCents,
   pendingCents,
 }: {
   confirmedCents: number;
-  attestedCents: number;
   pendingCents: number;
 }) {
   const items = [
@@ -139,12 +128,6 @@ function Legend({
       swatch: "bg-verified",
       label: "Receipt-backed",
       cents: confirmedCents,
-    },
-    {
-      show: attestedCents > 0,
-      swatch: "bg-attested",
-      label: "Self-reported",
-      cents: attestedCents,
     },
     {
       show: pendingCents > 0,

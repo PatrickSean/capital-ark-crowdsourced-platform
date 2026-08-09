@@ -16,11 +16,10 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const ACCEPTED = ["image/png", "image/jpeg", "image/webp"];
 
 /**
- * Optional receipt attachment with in-browser OCR.
+ * Required receipt attachment with in-browser OCR.
  *
- * The image is read locally and is sent for the optional receipt check only
- * after the contributor explicitly consents and confirms. Local OCR can
- * suggest an amount before that upload happens.
+ * The image stays local until the contributor explicitly agrees to the AI
+ * check. Local OCR can suggest an amount before that upload happens.
  */
 export function ReceiptDropzone({
   onResult,
@@ -115,7 +114,13 @@ export function ReceiptDropzone({
           <p className="text-sm font-semibold text-emerald-900">Receipt attached</p>
           <p className="truncate text-xs text-emerald-700">{result.file.name}</p>
           {busy && (
-            <p className="mt-1 text-xs text-emerald-700">Reading the amount…</p>
+            <p
+              role="status"
+              aria-live="polite"
+              className="mt-1 text-xs text-emerald-700"
+            >
+              Reading the amount…
+            </p>
           )}
           {!busy && result.ocrAmountCents !== null && (
             <p className="mt-1 text-xs text-emerald-700">
@@ -126,8 +131,9 @@ export function ReceiptDropzone({
         </div>
         <button
           type="button"
+          disabled={disabled}
           onClick={clear}
-          className="tap-target shrink-0 rounded-lg px-2 text-xs font-semibold text-emerald-800 underline underline-offset-2 hover:text-emerald-900"
+          className="tap-target shrink-0 rounded-lg px-2 text-xs font-semibold text-emerald-800 underline underline-offset-2 hover:text-emerald-900 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Remove
         </button>
@@ -165,14 +171,17 @@ export function ReceiptDropzone({
           <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z" />
           <path d="M9 13h2v3a1 1 0 11-2 0v-3z" />
         </svg>
-        Add a receipt screenshot
-        <span className="text-ink-400">(optional)</span>
+        Upload receipt screenshot
+        <span className="text-ink-500">(required)</span>
       </button>
 
       <input
         ref={inputRef}
         type="file"
         accept="image/png,image/jpeg,image/webp"
+        required
+        aria-label="Upload contribution receipt screenshot"
+        disabled={disabled}
         className="sr-only"
         onChange={(e) => {
           const file = e.target.files?.[0];

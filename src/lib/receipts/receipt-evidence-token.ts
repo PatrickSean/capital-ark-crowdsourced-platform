@@ -15,6 +15,7 @@ const ClaimsSchema = z.object({
   userId: z.string().uuid(),
   pledgeId: z.string().min(1).max(100),
   targetId: z.string().min(1).max(100),
+  candidateId: z.string().min(1).max(100),
   amountCents: z.number().int().positive().max(100_000_00),
   evidenceHash: z.string().regex(/^[0-9a-f]{64}$/),
   checkedAt: z.number().int().positive(),
@@ -95,6 +96,7 @@ export function verifyReceiptEvidenceToken(
     userId: string;
     pledgeId: string;
     targetId: string;
+    candidateId: string;
     amountCents: number;
   },
   secret: string,
@@ -139,7 +141,11 @@ export function verifyReceiptEvidenceToken(
       claims.userId !== expected.userId ||
       claims.pledgeId !== expected.pledgeId ||
       claims.targetId !== expected.targetId ||
-      claims.amountCents !== expected.amountCents
+      claims.candidateId !== expected.candidateId ||
+      claims.amountCents !== expected.amountCents ||
+      claims.extractedAmountCents !== expected.amountCents ||
+      claims.checkedAt > claims.expiresAt ||
+      (claims.candidateMatched !== true && claims.committeeMatched !== true)
     ) {
       return null;
     }

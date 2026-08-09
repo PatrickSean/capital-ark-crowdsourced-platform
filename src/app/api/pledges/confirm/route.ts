@@ -1,18 +1,18 @@
 import { z } from "zod";
 import { store } from "@/lib/data";
 import { getSessionUser } from "@/lib/auth/session";
-import { isSupabaseConfigured } from "@/lib/auth/config";
-import { getSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { clientIp, hashIp, jsonError, jsonOk, parseBody } from "@/lib/api/http";
 import { LIMITS, rateLimit } from "@/lib/api/rate-limit";
 import { attestationVersionFor } from "@/lib/compliance/attestations";
-import { isReceiptObjectKeyFor } from "@/lib/receipt-key";
 import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
 import {
   ContributionEvidenceType,
   ReceiptCheckStatus,
 } from "@/generated/prisma/enums";
-import { ReceiptEvidenceReuseError } from "@/lib/data/errors";
+import {
+  ReceiptEvidenceReuseError,
+  ReceiptVerificationRequiredError,
+} from "@/lib/data/errors";
 import type { ReceiptEvidenceInput } from "@/lib/data/store-types";
 import { verifyReceiptEvidenceToken } from "@/lib/receipts/receipt-evidence-token";
 import { receiptEvidenceSecret } from "@/lib/receipts/config";
@@ -32,14 +32,6 @@ const BodySchema = z
       .max(100_000_00)
       .nullable()
       .optional(),
-    ocrAmountCents: z
-      .number()
-      .int()
-      .positive()
-      .max(100_000_00)
-      .nullable()
-      .optional(),
-    receiptUrl: z.string().max(500).nullable().optional(),
     receiptEvidenceToken: z.string().min(1).max(4096).nullable().optional(),
     attestationVersion: z.string().min(1).optional(),
     attested: z.boolean().optional().default(false),
@@ -52,25 +44,20 @@ const BodySchema = z
 /**
  * POST /api/pledges/confirm
  *
- * Self-attestation. This is the only way a pledge becomes "raised", because
- * the platform has no access to candidate backends and never will.
- *
- * A pledge with secure attached evidence or a matching AI-check token lands as
- * COMPLETED; a plain self-report lands as UNVERIFIED. AI checking is a
- * consistency screen, not proof that a committee accepted the contribution.
+ * A contribution becomes public progress only after the server authenticates
+ * a short-lived receipt-evidence token issued by /api/receipts/verify for this
+ * exact user, pledge, target, candidate, and amount. Raw receipt bytes are not
+ * accepted or persisted here.
  */
 export async function POST(request: Request) {
   const { data: body, error } = await parseBody(request, BodySchema);
   if (error) return error;
 
-  // These are two different privacy contracts: a stored private object versus
-  // a memory-only AI check. Never retain an uploaded image while presenting
-  // the public contribution as AI-checked.
-  if (body.receiptUrl && body.receiptEvidenceToken) {
+  if (!body.declined && !body.receiptEvidenceToken) {
     return jsonError(
       422,
-      "conflicting_receipt_evidence",
-      "Choose either a private receipt attachment or an AI receipt check, not both.",
+      "receipt_verification_required",
+      "Upload a receipt and complete its verification before adding this contribution.",
     );
   }
 
@@ -96,11 +83,7 @@ export async function POST(request: Request) {
   const { pledge: existing, candidate } = context;
   const requestedEvidenceType: ContributionEvidenceType | null = body.declined
     ? null
-    : body.receiptEvidenceToken
-      ? ContributionEvidenceType.RECEIPT_AI_CHECKED
-      : body.receiptUrl
-        ? ContributionEvidenceType.RECEIPT_ATTACHED
-        : ContributionEvidenceType.SELF_REPORTED;
+    : ContributionEvidenceType.RECEIPT_AI_CHECKED;
 
   // Ownership check before anything else: a pledge id must never be usable by
   // anyone but the person who created it.
@@ -109,8 +92,8 @@ export async function POST(request: Request) {
   }
 
   // A network retry after a successful confirmation is a read, not another
-  // write. Return the first result before re-validating transient inputs such
-  // as a signed receipt upload.
+  // write. Return the first receipt-backed result before re-validating an
+  // evidence token that may have expired since the original success.
   if (existing.status !== "PENDING") {
     if (!isCompatibleOutcome(existing.status, body.declined)) {
       return jsonError(
@@ -155,61 +138,9 @@ export async function POST(request: Request) {
     );
   }
 
-  let receiptUrl: string | null = null;
-  if (!body.declined && body.receiptUrl) {
-    if (!isSupabaseConfigured) {
-      return jsonError(
-        422,
-        "receipt_storage_unavailable",
-        "Receipt uploads aren't enabled on this deployment. Please confirm without one.",
-      );
-    }
-
-    if (!isReceiptObjectKeyFor(body.receiptUrl, user.id, existing.id)) {
-      return jsonError(
-        422,
-        "invalid_receipt_key",
-        "That receipt isn't attached to this contribution.",
-      );
-    }
-
-    const supabase = await getSupabaseServerClient();
-    if (!supabase) {
-      return jsonError(
-        503,
-        "storage_unavailable",
-        "Receipt storage isn't available right now. Please try again without the receipt.",
-      );
-    }
-
-    try {
-      const { data: receiptExists } = await supabase.storage
-        .from("receipts")
-        .exists(body.receiptUrl);
-      if (!receiptExists) {
-        return jsonError(
-          422,
-          "receipt_not_found",
-          "The receipt upload didn't finish. Please try again or confirm without it.",
-        );
-      }
-    } catch {
-      return jsonError(
-        503,
-        "storage_unavailable",
-        "We couldn't verify the receipt right now. Please try again or confirm without it.",
-      );
-    }
-
-    receiptUrl = body.receiptUrl;
-  }
-
   const confirmedAmountCents =
     body.confirmedAmountCents ?? existing.amountCents;
   let receiptEvidence: ReceiptEvidenceInput | null = null;
-  let evidenceType: ContributionEvidenceType | null = body.declined
-    ? null
-    : ContributionEvidenceType.SELF_REPORTED;
 
   if (!body.declined && body.receiptEvidenceToken) {
     const secret = receiptEvidenceSecret();
@@ -220,6 +151,7 @@ export async function POST(request: Request) {
             userId: user.id,
             pledgeId: existing.id,
             targetId: existing.targetId,
+            candidateId: candidate.id,
             amountCents: confirmedAmountCents,
           },
           secret,
@@ -229,14 +161,16 @@ export async function POST(request: Request) {
       return jsonError(
         422,
         "invalid_receipt_evidence",
-        "That receipt check expired or doesn't match this contribution. You can retry it or continue as self-reported.",
+        "That receipt check expired or doesn't match this contribution. Upload the receipt again to retry verification.",
       );
     }
 
-    evidenceType = ContributionEvidenceType.RECEIPT_AI_CHECKED;
     receiptEvidence = {
       pledgeId: existing.id,
       userId: user.id,
+      targetId: existing.targetId,
+      candidateId: candidate.id,
+      amountCents: confirmedAmountCents,
       status: ReceiptCheckStatus.AI_CHECKED_MATCH,
       model: claims.model,
       checkedAt: new Date(claims.checkedAt),
@@ -252,8 +186,6 @@ export async function POST(request: Request) {
       reasons: [],
       evidenceHash: claims.evidenceHash,
     };
-  } else if (!body.declined && receiptUrl) {
-    evidenceType = ContributionEvidenceType.RECEIPT_ATTACHED;
   }
 
   let updated;
@@ -262,9 +194,6 @@ export async function POST(request: Request) {
       pledgeId: body.pledgeId,
       userId: user.id,
       confirmedAmountCents: body.confirmedAmountCents ?? null,
-      ocrAmountCents: body.ocrAmountCents ?? null,
-      receiptUrl,
-      evidenceType,
       receiptEvidence,
       attestationVersion: requiredAttestationVersion,
       declined: body.declined,
@@ -274,7 +203,14 @@ export async function POST(request: Request) {
       return jsonError(
         409,
         "receipt_already_used",
-        "That receipt was already used for another contribution. Continue as self-reported or use a different receipt.",
+        "That receipt was already used for another contribution. Upload a different receipt.",
+      );
+    }
+    if (cause instanceof ReceiptVerificationRequiredError) {
+      return jsonError(
+        422,
+        "receipt_verification_required",
+        "Upload a receipt and complete its verification before adding this contribution.",
       );
     }
     return jsonError(500, "confirm_failed", "We couldn't record that. Please try again.");
@@ -293,7 +229,7 @@ export async function POST(request: Request) {
       "That contribution was already resolved. Refresh to see its current status.",
     );
   }
-  if (!body.declined && updated.evidenceType !== evidenceType) {
+  if (!body.declined && updated.evidenceType !== requestedEvidenceType) {
     return jsonError(
       409,
       "pledge_already_resolved",
@@ -312,5 +248,5 @@ export async function POST(request: Request) {
 
 function isCompatibleOutcome(status: string, declined: boolean): boolean {
   if (declined) return status === "DECLINED";
-  return status === "COMPLETED" || status === "UNVERIFIED";
+  return status === "COMPLETED";
 }

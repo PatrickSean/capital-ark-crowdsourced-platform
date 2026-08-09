@@ -72,20 +72,19 @@ export interface CoalitionView {
 }
 
 /**
- * The three-way split that drives the layered progress bar. Keeping these
- * separate rather than collapsing to one "raised" number is deliberate: the
- * platform has no access to candidate backends, so it must be honest about
- * which dollars are receipt-backed and which are only self-reported.
+ * The public progress snapshot. Historical self-reports may still exist in
+ * storage, but only receipt-verified COMPLETED contributions move the public
+ * total and donor count.
  */
 export interface ProgressSnapshot {
   goalCents: number;
   /** Receipt-backed, not confirmation from committee records. */
   confirmedCents: number;
-  /** Self-attested, no receipt. */
+  /** Legacy field retained for wire compatibility; always zero publicly. */
   attestedCents: number;
   /** Clicked out, outcome still unknown. */
   pendingCents: number;
-  /** confirmed + attested. Pending is excluded; it hasn't happened yet. */
+  /** Same as confirmedCents. Pending and historical self-reports are excluded. */
   raisedCents: number;
   percent: number;
   donorCount: number;

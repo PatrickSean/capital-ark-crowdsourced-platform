@@ -285,10 +285,7 @@ export default async function TargetPage({
               autoOpen={requestedAmount !== null || resumePledgeId !== null}
               initialAmountCents={resumeAmountCents ?? requestedAmount}
               resumePledgeId={resumePledgeId}
-              receiptReviewAvailable={
-                isAiReceiptReviewConfigured() &&
-                Boolean(candidate.donationUrlVerifiedAt)
-              }
+              receiptReviewAvailable={isAiReceiptReviewConfigured()}
             />
             {candidate.platform && (
               <p className="text-center text-xs text-ink-500">

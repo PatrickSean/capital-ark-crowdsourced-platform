@@ -87,15 +87,14 @@ export default async function CoalitionPage({
 
   // Deliberately no cross-drive contributor count here: donorCount is distinct
   // per target, so summing it would double-count anyone who backed two
-  // candidates. Verified dollars are exactly derivable, and more useful.
+  // candidates. Receipt-backed dollars are exactly derivable, and more useful.
   const totals = targets.reduce(
     (acc, t) => ({
       raised: acc.raised + t.progress.raisedCents,
       goal: acc.goal + t.progress.goalCents,
-      verified: acc.verified + t.progress.confirmedCents,
-      attested: acc.attested + t.progress.attestedCents,
+      receiptBacked: acc.receiptBacked + t.progress.confirmedCents,
     }),
-    { raised: 0, goal: 0, verified: 0, attested: 0 },
+    { raised: 0, goal: 0, receiptBacked: 0 },
   );
 
   return (
@@ -148,15 +147,14 @@ export default async function CoalitionPage({
 
         <section
           aria-label="Coalition totals"
-          className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+          className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4"
         >
           <Stat label="Raised" value={formatCentsShort(totals.raised)} emphasis />
           <Stat label="Combined goal" value={formatCentsShort(totals.goal)} />
           <Stat
             label="Receipt-backed"
-            value={formatCentsShort(totals.verified)}
+            value={formatCentsShort(totals.receiptBacked)}
           />
-          <Stat label="Self-reported" value={formatCentsShort(totals.attested)} />
           <Stat label="Active drives" value={String(targets.length)} />
         </section>
 
