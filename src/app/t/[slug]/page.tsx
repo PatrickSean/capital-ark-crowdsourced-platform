@@ -4,7 +4,13 @@ import { notFound } from "next/navigation";
 import { isDemoMode, store } from "@/lib/data";
 import { getSessionUser } from "@/lib/auth/session";
 import { absoluteUrl } from "@/lib/site";
-import { formatCentsShort, parseAmountToCents } from "@/lib/money";
+import {
+  openGraphImageDescriptor,
+  targetSocialCardPath,
+  truncateForSocial,
+  twitterImageDescriptor,
+} from "@/lib/social-cards";
+import { parseAmountToCents } from "@/lib/money";
 import { PLATFORM_LABELS } from "@/lib/tracking/link-builder";
 import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
 import { isAiReceiptReviewConfigured } from "@/lib/receipts/config";
@@ -36,25 +42,30 @@ export async function generateMetadata({
   const target = await store.getTargetBySlug(slug);
   if (!target) return { title: "Drive not found" };
 
-  const description = `${target.coalition.name} has raised ${formatCentsShort(
-    target.progress.raisedCents,
-  )} of ${formatCentsShort(target.goalCents)} for ${target.candidate.fullName}.`;
+  const description = truncateForSocial(
+    `Join ${target.coalition.name}'s drive for ${target.candidate.fullName}. Track live community progress while contributions go directly to ${target.candidate.fullName}'s official processor.`,
+  );
+  const cardUrl = absoluteUrl(targetSocialCardPath(target.slug));
+  const cardAlt = `${target.candidate.fullName} fundraising drive for ${target.coalition.name} on Capital Ark`;
 
   return {
     title: target.title,
     description,
     alternates: { canonical: `/t/${target.slug}` },
     openGraph: {
+      type: "website",
+      locale: "en_US",
+      siteName: "Capital Ark",
       title: target.title,
       description,
       url: absoluteUrl(`/t/${target.slug}`),
-      images: [{ url: absoluteUrl(`/t/${target.slug}/opengraph-image`) }],
+      images: [openGraphImageDescriptor(cardUrl, cardAlt)],
     },
     twitter: {
       card: "summary_large_image",
       title: target.title,
       description,
-      images: [absoluteUrl(`/t/${target.slug}/opengraph-image`)],
+      images: [twitterImageDescriptor(cardUrl, cardAlt)],
     },
   };
 }

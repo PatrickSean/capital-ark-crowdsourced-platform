@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export function SiteHeader({ demoMode }: { demoMode?: boolean }) {
@@ -21,12 +22,14 @@ export function SiteHeader({ demoMode }: { demoMode?: boolean }) {
       <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
           <Link href="/" className="tap-target flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="flex size-8 items-center justify-center rounded-lg bg-brand-700 text-sm font-black text-white"
-            >
-              CA
-            </span>
+            <Image
+              src="/brand/capital-ark-mark.png"
+              alt=""
+              width={36}
+              height={36}
+              loading="eager"
+              className="size-9 rounded-[10px]"
+            />
             <span className="text-base font-bold tracking-tight text-ink-900 max-[359px]:sr-only">
               Capital Ark
             </span>

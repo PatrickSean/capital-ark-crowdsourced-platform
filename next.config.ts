@@ -20,9 +20,6 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
-  async rewrites() {
-    return [{ source: "/favicon.ico", destination: "/icon.svg" }];
-  },
   async headers() {
     return [
       {

@@ -3,6 +3,12 @@ import { notFound } from "next/navigation";
 import { isDemoMode, store } from "@/lib/data";
 import { getSessionUser } from "@/lib/auth/session";
 import { absoluteUrl } from "@/lib/site";
+import {
+  coalitionSocialCardPath,
+  openGraphImageDescriptor,
+  truncateForSocial,
+  twitterImageDescriptor,
+} from "@/lib/social-cards";
 import { formatCentsShort } from "@/lib/money";
 import { SiteHeader } from "@/components/layout/site-header";
 import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
@@ -25,23 +31,31 @@ export async function generateMetadata({
   const coalition = await store.getCoalitionBySlug(slug);
   if (!coalition) return { title: "Coalition not found" };
 
+  const description = truncateForSocial(
+    coalition.description ??
+      `Follow ${coalition.name}'s fundraising drives and current progress on Capital Ark. Contributions go directly to official campaign processors.`,
+  );
+  const cardUrl = absoluteUrl(coalitionSocialCardPath(coalition.slug));
+  const cardAlt = `${coalition.name} community fundraising drive on Capital Ark`;
+
   return {
     title: coalition.name,
-    description:
-      coalition.description ??
-      `Track ${coalition.name}'s fundraising drives on Capital Ark.`,
+    description,
     alternates: { canonical: `/c/${coalition.slug}` },
     openGraph: {
+      type: "website",
+      locale: "en_US",
+      siteName: "Capital Ark",
       title: coalition.name,
-      description: coalition.description ?? undefined,
+      description,
       url: absoluteUrl(`/c/${coalition.slug}`),
-      images: [{ url: absoluteUrl(`/c/${coalition.slug}/opengraph-image`) }],
+      images: [openGraphImageDescriptor(cardUrl, cardAlt)],
     },
     twitter: {
       card: "summary_large_image",
       title: coalition.name,
-      description: coalition.description ?? undefined,
-      images: [absoluteUrl(`/c/${coalition.slug}/opengraph-image`)],
+      description,
+      images: [twitterImageDescriptor(cardUrl, cardAlt)],
     },
   };
 }

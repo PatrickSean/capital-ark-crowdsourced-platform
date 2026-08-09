@@ -1,6 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { siteUrl } from "@/lib/site";
+import { absoluteUrl, siteUrl } from "@/lib/site";
+import {
+  homeSocialCardPath,
+  openGraphImageDescriptor,
+  twitterImageDescriptor,
+} from "@/lib/social-cards";
 import "./globals.css";
+
+const homeSocialImageUrl = absoluteUrl(homeSocialCardPath());
+const homeSocialImageAlt =
+  "Capital Ark — set a goal, share one link, and track community fundraising progress";
 
 export const metadata: Metadata = {
   applicationName: "Capital Ark",
@@ -16,21 +25,26 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     siteName: "Capital Ark",
+    url: siteUrl(),
     title: "Capital Ark — Collective fundraising, clearly tracked",
     description:
       "One coalition link, official campaign processors, and transparent crowdsourced progress. Capital Ark never handles contributions.",
+    images: [
+      openGraphImageDescriptor(homeSocialImageUrl, homeSocialImageAlt),
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Capital Ark — Collective fundraising, clearly tracked",
     description:
       "One coalition link, official campaign processors, and transparent crowdsourced progress.",
+    images: [twitterImageDescriptor(homeSocialImageUrl, homeSocialImageAlt)],
   },
   robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: "#1E6851",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
