@@ -505,7 +505,6 @@ export function createPrismaStore(prisma: PrismaClient): Store {
             trackingTagUsed: input.trackingTag,
             isAnonymousAtPledge: input.isAnonymous,
             ipHash: input.ipHash ?? null,
-            userAgent: input.userAgent ?? null,
             clientRequestId: input.clientRequestId ?? null,
             status: PledgeStatus.PENDING,
           },
@@ -698,15 +697,10 @@ export function createPrismaStore(prisma: PrismaClient): Store {
     async logClickEvent(input: LogClickInput) {
       await prisma.linkClickEvent.create({
         data: {
-          pledgeId: input.pledgeId,
           targetId: input.targetId,
-          userId: input.userId,
           platform: input.platform,
           trackingTag: input.trackingTag,
-          generatedUrl: input.generatedUrl,
           amountCents: input.amountCents,
-          referrer: input.referrer ?? null,
-          ipHash: input.ipHash ?? null,
         },
       });
     },

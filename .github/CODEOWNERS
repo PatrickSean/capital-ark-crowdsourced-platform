@@ -1,0 +1,12 @@
+# A maintainer review is required for changes to security, deployment, data,
+# and contribution-integrity boundaries.
+* @PatrickSean
+
+/.github/ @PatrickSean
+/prisma/ @PatrickSean
+/src/app/api/ @PatrickSean
+/src/lib/auth/ @PatrickSean
+/src/lib/data/ @PatrickSean
+/src/lib/receipts/ @PatrickSean
+/src/lib/tracking/ @PatrickSean
+/SECURITY.md @PatrickSean

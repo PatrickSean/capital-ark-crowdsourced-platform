@@ -1,0 +1,26 @@
+Capital Ark
+Copyright 2026 Capital Ark contributors
+
+The software source code in this repository is licensed under the Apache
+License, Version 2.0. Capital Ark names, logos, and brand artwork remain the
+property of their respective owner and are not included in any trademark
+license. The Apache License permits reasonable descriptive use of the project
+name, but does not grant permission to imply sponsorship, endorsement, or
+affiliation.
+
+Candidate portraits included in public/candidates are redistributed as public
+domain government works. Source and credit information is preserved in
+src/lib/data/campaigns/nc-hemp-photo-sources.ts:
+
+- Eight North Carolina General Assembly portraits are published as public
+  domain images under the NCGA member-photo policy:
+  https://www.ncleg.gov/Disclaimer
+- The Josh Stein photograph is credited to Sammy Mayo Jr. / U.S. Department
+  of Housing and Urban Development and is a U.S. federal government work:
+  https://commons.wikimedia.org/wiki/File:Josh_Stein,_Governor_of_North_Carolina_(cropped).jpg
+- The Tim Moore portrait is provided by the Office of Congressman Tim Moore /
+  U.S. House of Representatives as a U.S. federal government work:
+  https://timmoore.house.gov/media/press-kit
+
+Generated social-card images may incorporate these portraits and Capital Ark
+brand assets. No government office or candidate endorses Capital Ark.

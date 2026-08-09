@@ -137,19 +137,13 @@ export async function POST(request: Request) {
     trackingTag: built.trackingTag,
     isAnonymous: user.isAnonymous,
     ipHash,
-    userAgent: request.headers.get("user-agent"),
   });
 
   await store.logClickEvent({
-    pledgeId: pledge.id,
     targetId: target.id,
-    userId: user.id,
     platform,
     trackingTag: built.trackingTag,
-    generatedUrl: built.url,
     amountCents,
-    referrer: request.headers.get("referer"),
-    ipHash,
   });
 
   return jsonOk({

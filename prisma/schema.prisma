@@ -128,7 +128,6 @@ model User {
   pledges         Pledge[]
   coalitionsOwned Coalition[]         @relation("CoalitionCreator")
   targetsCreated  FundraisingTarget[] @relation("TargetCreator")
-  clickEvents     LinkClickEvent[]
   activityEvents  ActivityEvent[]
 
   @@index([isAnonymous])
@@ -325,17 +324,15 @@ model Pledge {
   /// legal text the user actually agreed to on that date.
   attestedAt         DateTime? @map("attested_at")
   attestationVersion String?   @map("attestation_version")
-  /// Salted hash. Deliberately not the raw IP: enough to spot abuse patterns,
-  /// not enough to deanonymize a donor.
+  /// Salted hash. Deliberately not the raw IP: enough to investigate recent
+  /// abuse patterns, then cleared by the hourly retention job after 30 days.
   ipHash             String?   @map("ip_hash")
-  userAgent          String?   @map("user_agent")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  target      FundraisingTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
-  clickEvents LinkClickEvent[]
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target FundraisingTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
 
   @@unique([userId, clientRequestId])
   @@index([targetId, status])
@@ -344,24 +341,19 @@ model Pledge {
   @@map("pledges")
 }
 
-/// Every outbound link generation, logged before the redirect happens.
+/// Minimal attribution event for an outbound link generation. This record is
+/// deliberately not linked to a visitor or pledge and never stores the
+/// generated processor URL, referrer, browser user agent, or network hash.
 model LinkClickEvent {
-  id       String  @id @default(uuid()) @db.Uuid
-  pledgeId String? @map("pledge_id") @db.Uuid
-  targetId String  @map("target_id") @db.Uuid
-  userId   String? @map("user_id") @db.Uuid
+  id       String @id @default(uuid()) @db.Uuid
+  targetId String @map("target_id") @db.Uuid
 
-  platform     Platform
-  trackingTag  String   @map("tracking_tag")
-  generatedUrl String   @map("generated_url")
-  amountCents  Int?     @map("amount_cents")
-  referrer     String?
-  ipHash       String?  @map("ip_hash")
-  createdAt    DateTime @default(now()) @map("created_at")
+  platform    Platform
+  trackingTag String   @map("tracking_tag")
+  amountCents Int?     @map("amount_cents")
+  createdAt   DateTime @default(now()) @map("created_at")
 
-  pledge Pledge?           @relation(fields: [pledgeId], references: [id], onDelete: SetNull)
   target FundraisingTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
-  user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([targetId, createdAt])
   @@map("link_click_events")

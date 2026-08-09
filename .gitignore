@@ -4,6 +4,15 @@ out
 build
 .DS_Store
 *.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.sqlite
+*.sqlite-*
+*.db
+*.dump
 
 .env*
 !.env.example
@@ -19,3 +28,7 @@ src/generated
 
 # Output of the Playwright verification scripts.
 screenshots
+coverage
+test-results
+playwright-report
+.vercel

@@ -68,6 +68,9 @@ describe("POST /api/targets/[id]/pledges", () => {
         clientRequestId: REQUEST_ID,
       }),
     );
+    expect(mocks.createPledge.mock.calls[0]?.[0]).not.toHaveProperty(
+      "userAgent",
+    );
   });
 
   it("requires a UUID idempotency key", async () => {
@@ -117,6 +120,8 @@ function request(options: { idempotencyKey?: string } = {}) {
       "content-type": "application/json",
       "idempotency-key": options.idempotencyKey ?? REQUEST_ID,
       "x-forwarded-for": "192.0.2.10",
+      "user-agent": "Privacy-sensitive browser fingerprint",
+      referer: "https://example.test/supporters/alice",
     },
     body: JSON.stringify({ amountCents: 50_000 }),
   });

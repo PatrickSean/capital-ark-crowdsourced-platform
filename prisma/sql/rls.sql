@@ -1,14 +1,14 @@
 -- ---------------------------------------------------------------------------
--- Capital Ark row level security.
+-- Capital Ark row-level security for the optional Supabase deployment.
 --
--- Run this AFTER `prisma migrate deploy`, against your Supabase database:
+-- Run this AFTER `prisma migrate deploy`, as the database owner:
 --   psql "$DIRECT_URL" -f prisma/sql/rls.sql
 --
--- The governing idea: anonymous users are first-class contributors. They may
--- read public campaign data and write their own pledges, because requiring a
--- signup before someone can give is the single biggest drop-off in the funnel.
--- What they may NOT do is administer a coalition, since that needs an identity
--- we can hold accountable.
+-- Browser roles are read-only. Every mutation and every private read goes
+-- through Capital Ark's server, where authorization is enforced before Prisma
+-- uses a private database role with BYPASSRLS (or equivalent table-owner
+-- access). Never expose that database credential or a Supabase service-role
+-- token to a browser.
 -- ---------------------------------------------------------------------------
 
 alter table public.users               enable row level security;
@@ -20,216 +20,253 @@ alter table public.pledges             enable row level security;
 alter table public.link_click_events   enable row level security;
 alter table public.activity_events     enable row level security;
 
--- True only for users who have linked an email or OAuth identity.
-create or replace function public.is_permanent_user()
-returns boolean
-language sql
-stable
-as $$
-  select coalesce(auth.jwt() ->> 'is_anonymous', 'true') = 'false';
-$$;
+-- Remove every policy name shipped by earlier versions before defining the
+-- intentionally small read-only surface. Revoking privileges below is a second
+-- independent boundary: a stale policy cannot restore browser access.
+drop policy if exists "users read own row" on public.users;
+drop policy if exists "users update own row" on public.users;
+drop policy if exists "users_select_own" on public.users;
 
-create or replace function public.is_coalition_admin(target_coalition uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-      from public.coalition_members m
-     where m.coalition_id = target_coalition
-       and m.user_id = auth.uid()
-       and m.role in ('OWNER', 'ADMIN')
-  );
-$$;
+drop policy if exists "public coalitions are world readable" on public.coalitions;
+drop policy if exists "permanent users create coalitions" on public.coalitions;
+drop policy if exists "admins update their coalition" on public.coalitions;
+drop policy if exists "coalitions_select_public" on public.coalitions;
 
--- users -----------------------------------------------------------------
-create policy "users read own row"
+drop policy if exists "members read their own membership rows" on public.coalition_members;
+drop policy if exists "admins manage membership" on public.coalition_members;
+
+drop policy if exists "candidates are world readable" on public.candidates;
+drop policy if exists "permanent users add candidates" on public.candidates;
+drop policy if exists "candidates_select_for_public_targets" on public.candidates;
+
+drop policy if exists "targets of public coalitions are world readable" on public.fundraising_targets;
+drop policy if exists "admins manage targets" on public.fundraising_targets;
+drop policy if exists "targets_select_public" on public.fundraising_targets;
+
+drop policy if exists "pledgers read their own pledges" on public.pledges;
+drop policy if exists "users create their own pledges" on public.pledges;
+drop policy if exists "pledgers update their own pledges" on public.pledges;
+
+drop policy if exists "admins read click events" on public.link_click_events;
+drop policy if exists "users log their own click events" on public.link_click_events;
+
+drop policy if exists "activity of public coalitions is world readable" on public.activity_events;
+
+drop policy if exists "users upload their own receipts" on storage.objects;
+drop policy if exists "users read their own receipts" on storage.objects;
+
+-- These SECURITY DEFINER helpers supported the removed client-admin policies.
+-- Keeping them would create an unnecessary privilege surface.
+drop function if exists public.is_coalition_admin(uuid);
+drop function if exists public.is_permanent_user();
+
+-- Supabase commonly grants broad table privileges to its API roles. Remove
+-- all of them first, including anything inherited from PostgreSQL's PUBLIC
+-- pseudo-role. Server credentials are deliberately not named or revoked here.
+revoke all privileges on table
+  public.users,
+  public.coalitions,
+  public.coalition_members,
+  public.candidates,
+  public.fundraising_targets,
+  public.pledges,
+  public.link_click_events,
+  public.activity_events
+from public;
+
+revoke all privileges on table
+  public.users,
+  public.coalitions,
+  public.coalition_members,
+  public.candidates,
+  public.fundraising_targets,
+  public.pledges,
+  public.link_click_events,
+  public.activity_events
+from anon, authenticated;
+
+-- users ---------------------------------------------------------------------
+-- An authenticated person may read only their own profile. There is no client
+-- update policy; account changes go through an authorized server endpoint.
+create policy "users_select_own"
   on public.users for select
+  to authenticated
   using (id = auth.uid());
 
-create policy "users update own row"
-  on public.users for update
-  using (id = auth.uid())
-  with check (id = auth.uid());
+grant select (
+  id,
+  email,
+  display_name,
+  avatar_url,
+  is_anonymous,
+  employer,
+  occupation,
+  city,
+  state,
+  zip,
+  created_at,
+  updated_at
+) on public.users to authenticated;
 
--- coalitions ------------------------------------------------------------
--- Public coalitions are readable by everyone including signed-out visitors,
--- because a shared link has to render before the visitor has any session.
-create policy "public coalitions are world readable"
+-- coalitions ----------------------------------------------------------------
+create policy "coalitions_select_public"
   on public.coalitions for select
   to anon, authenticated
-  using (is_public or is_coalition_admin(id));
+  using (is_public = true);
 
-create policy "permanent users create coalitions"
-  on public.coalitions for insert
-  to authenticated
-  with check (created_by_id = auth.uid() and public.is_permanent_user());
+grant select (
+  id,
+  slug,
+  name,
+  description,
+  logo_url,
+  tracking_prefix,
+  flat_tracking_tag,
+  require_sign_in,
+  verification_status,
+  reviewed_at,
+  is_public,
+  created_at,
+  updated_at
+) on public.coalitions to anon, authenticated;
 
-create policy "admins update their coalition"
-  on public.coalitions for update
-  to authenticated
-  using (is_coalition_admin(id))
-  with check (is_coalition_admin(id));
-
--- coalition_members -----------------------------------------------------
-create policy "members read their own membership rows"
-  on public.coalition_members for select
-  to authenticated
-  using (user_id = auth.uid() or is_coalition_admin(coalition_id));
-
-create policy "admins manage membership"
-  on public.coalition_members for all
-  to authenticated
-  using (is_coalition_admin(coalition_id))
-  with check (is_coalition_admin(coalition_id));
-
--- candidates ------------------------------------------------------------
-create policy "candidates are world readable"
-  on public.candidates for select
-  to anon, authenticated
-  using (true);
-
-create policy "permanent users add candidates"
-  on public.candidates for insert
-  to authenticated
-  with check (public.is_permanent_user());
-
--- fundraising_targets ---------------------------------------------------
-create policy "targets of public coalitions are world readable"
+-- fundraising_targets -------------------------------------------------------
+create policy "targets_select_public"
   on public.fundraising_targets for select
   to anon, authenticated
   using (
-    exists (
-      select 1 from public.coalitions c
-       where c.id = coalition_id and (c.is_public or is_coalition_admin(c.id))
+    status = 'ACTIVE'
+    and exists (
+      select 1
+        from public.coalitions c
+       where c.id = coalition_id
+         and c.is_public = true
     )
   );
 
-create policy "admins manage targets"
-  on public.fundraising_targets for all
-  to authenticated
-  using (is_coalition_admin(coalition_id))
-  with check (is_coalition_admin(coalition_id));
+grant select (
+  id,
+  slug,
+  coalition_id,
+  candidate_id,
+  title,
+  description,
+  goal_cents,
+  deadline,
+  suggested_amounts,
+  status,
+  created_at,
+  updated_at
+) on public.fundraising_targets to anon, authenticated;
 
--- pledges ---------------------------------------------------------------
--- Deliberately narrow. Individual pledge rows carry the donor's identity and
--- receipt, so they are visible only to the pledger and coalition admins. The
--- public progress bar is served from an aggregate (see progress_totals below),
--- never by letting clients read the underlying rows.
-create policy "pledgers read their own pledges"
-  on public.pledges for select
-  to authenticated
+-- candidates ----------------------------------------------------------------
+-- A candidate row is public only when an active target in a public coalition
+-- references it. This avoids turning the candidates table into a world-readable
+-- directory unrelated to a visible drive.
+create policy "candidates_select_for_public_targets"
+  on public.candidates for select
+  to anon, authenticated
   using (
-    user_id = auth.uid()
-    or exists (
-      select 1 from public.fundraising_targets t
-       where t.id = target_id and is_coalition_admin(t.coalition_id)
-    )
-  );
-
--- Anonymous users may pledge, unless the coalition has opted into requiring
--- a signed-in identity.
-create policy "users create their own pledges"
-  on public.pledges for insert
-  to authenticated
-  with check (
-    user_id = auth.uid()
+    is_active = true
     and exists (
       select 1
         from public.fundraising_targets t
         join public.coalitions c on c.id = t.coalition_id
-       where t.id = target_id
+       where t.candidate_id = candidates.id
          and t.status = 'ACTIVE'
-         and (not c.require_sign_in or public.is_permanent_user())
+         and c.is_public = true
     )
   );
 
-create policy "pledgers update their own pledges"
-  on public.pledges for update
-  to authenticated
-  using (user_id = auth.uid())
-  with check (user_id = auth.uid());
+grant select (
+  id,
+  slug,
+  full_name,
+  legal_name,
+  party,
+  office,
+  state,
+  district,
+  bio,
+  photo_url,
+  donation_url,
+  donation_url_verified_at,
+  platform,
+  website_url,
+  official_profile_url,
+  official_data_verified_at,
+  jurisdiction,
+  committee_name,
+  ncsbe_committee_id,
+  fec_candidate_id,
+  fec_committee_id,
+  is_active,
+  created_at,
+  updated_at
+) on public.candidates to anon, authenticated;
 
--- link_click_events -----------------------------------------------------
-create policy "admins read click events"
-  on public.link_click_events for select
-  to authenticated
-  using (
-    exists (
-      select 1 from public.fundraising_targets t
-       where t.id = target_id and is_coalition_admin(t.coalition_id)
-    )
-  );
-
-create policy "users log their own click events"
-  on public.link_click_events for insert
-  to authenticated
-  with check (user_id = auth.uid() or user_id is null);
-
--- activity_events -------------------------------------------------------
-create policy "activity of public coalitions is world readable"
-  on public.activity_events for select
-  to anon, authenticated
-  using (
-    exists (
-      select 1 from public.coalitions c
-       where c.id = coalition_id and (c.is_public or is_coalition_admin(c.id))
-    )
-  );
+-- No policies or browser grants are created for coalition_members, pledges,
+-- link_click_events, or activity_events. Coalition admins do not receive a
+-- database-side exception. Server endpoints authorize every private read and
+-- write, and public activity is served only through the app's sanitized view
+-- model rather than raw activity rows.
 
 -- ---------------------------------------------------------------------------
 -- Public progress aggregate.
 --
--- Exposes only sums, never rows, so a signed-out visitor can see a live
--- progress bar without any pledge-level data leaving the database.
+-- The view exposes sums only. Historical UNVERIFIED/self-reported rows remain
+-- stored but never affect public progress or donor counts. COMPLETED rows count
+-- only when backed by receipt evidence. Pending intent is visible for 72 hours,
+-- matching the application expiry window. The view owner must be the trusted
+-- migration role; security_invoker=off intentionally prevents API roles from
+-- needing any access to private pledge rows.
 -- ---------------------------------------------------------------------------
-create or replace view public.target_progress
+drop view if exists public.target_progress;
+
+create view public.target_progress
 with (security_invoker = off) as
   select
-    t.id                                                                as target_id,
+    t.id as target_id,
     t.goal_cents,
-    coalesce(sum(p.confirmed_amount_cents) filter (where p.status = 'COMPLETED'),  0)::bigint as confirmed_cents,
-    coalesce(sum(p.confirmed_amount_cents) filter (where p.status = 'UNVERIFIED'), 0)::bigint as attested_cents,
-    coalesce(sum(p.amount_cents)           filter (
-      where p.status = 'PENDING'
-        and p.created_at >= now() - interval '72 hours'
-    ), 0)::bigint as pending_cents,
-    count(distinct p.user_id) filter (where p.status in ('COMPLETED', 'UNVERIFIED'))          as donor_count
+    coalesce(
+      sum(coalesce(p.confirmed_amount_cents, p.amount_cents)) filter (
+        where p.status = 'COMPLETED'
+          and p.evidence_type in ('RECEIPT_ATTACHED', 'RECEIPT_AI_CHECKED')
+      ),
+      0
+    )::bigint as confirmed_cents,
+    0::bigint as attested_cents,
+    coalesce(
+      sum(p.amount_cents) filter (
+        where p.status = 'PENDING'
+          and p.created_at >= now() - interval '72 hours'
+      ),
+      0
+    )::bigint as pending_cents,
+    coalesce(
+      sum(coalesce(p.confirmed_amount_cents, p.amount_cents)) filter (
+        where p.status = 'COMPLETED'
+          and p.evidence_type in ('RECEIPT_ATTACHED', 'RECEIPT_AI_CHECKED')
+      ),
+      0
+    )::bigint as raised_cents,
+    count(distinct p.user_id) filter (
+      where p.status = 'COMPLETED'
+        and p.evidence_type in ('RECEIPT_ATTACHED', 'RECEIPT_AI_CHECKED')
+    ) as donor_count
   from public.fundraising_targets t
+  join public.coalitions c
+    on c.id = t.coalition_id
+   and c.is_public = true
   left join public.pledges p on p.target_id = t.id
+  where t.status = 'ACTIVE'
   group by t.id, t.goal_cents;
 
+revoke all privileges on public.target_progress from public;
+revoke all privileges on public.target_progress from anon, authenticated;
 grant select on public.target_progress to anon, authenticated;
 
--- Receipts bucket: private, owner-scoped, served only via signed URLs.
-insert into storage.buckets (
-  id,
-  name,
-  public,
-  file_size_limit,
-  allowed_mime_types
-)
-values (
-  'receipts',
-  'receipts',
-  false,
-  10485760,
-  array['image/png', 'image/jpeg', 'image/webp', 'image/heic']::text[]
-)
-on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
-
-create policy "users upload their own receipts"
-  on storage.objects for insert
-  to authenticated
-  with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
-
-create policy "users read their own receipts"
-  on storage.objects for select
-  to authenticated
-  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+-- Raw receipt persistence is no longer offered. Remove only the two policies
+-- shipped by older Capital Ark releases. Do not drop the bucket or delete any
+-- existing objects; operators may need to retain or dispose of them under
+-- their own records policy.

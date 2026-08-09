@@ -41,9 +41,17 @@ export default async function PrivacyPage() {
               When you only read a public page, Capital Ark does not ask for a
               name or account. When you choose to contribute, the site creates
               an opaque visitor identifier in a secure cookie and records the
-              candidate, intended amount, tracking code, time, browser user
-              agent, and a salted one-way hash of the network address used for
-              abuse prevention.
+              candidate, intended amount, tracking code, time, and a salted
+              one-way hash of the network address used for recent abuse
+              investigation. That hash is cleared after 30 days.
+            </p>
+            <p>
+              Capital Ark does not save the generated processor URL, request
+              referrer, or full browser user agent. Outbound attribution keeps
+              only the target, processor, tracking code, optional intended
+              amount, and time, without separate visitor or pledge fields. A
+              non-flat tracking code contains a short opaque visitor fragment
+              for committee reconciliation, never a name or email address.
             </p>
             <p>
               When you create a drive, Capital Ark stores the drive description,
@@ -132,8 +140,10 @@ export default async function PrivacyPage() {
               Unresolved contribution intents expire after 72 hours. Confirmed
               records are retained while needed to operate the public totals,
               prevent duplicate reporting, and maintain an audit trail. You
-              can delete the Capital Ark visitor cookie in your browser; doing
-              so may prevent the site from reopening an unfinished pledge.
+              can delete the Capital Ark visitor cookie in your browser. Salted
+              network-address hashes on contribution records are cleared after
+              30 days. Deleting the cookie may prevent the site from reopening
+              an unfinished pledge.
             </p>
           </PolicySection>
         </div>

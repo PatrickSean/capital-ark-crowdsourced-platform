@@ -26,7 +26,6 @@ export interface CreatePledgeInput {
   trackingTag: string;
   isAnonymous: boolean;
   ipHash?: string | null;
-  userAgent?: string | null;
   clientRequestId?: string | null;
 }
 
@@ -63,15 +62,10 @@ export interface ConfirmPledgeInput {
 }
 
 export interface LogClickInput {
-  pledgeId: string;
   targetId: string;
-  userId: string | null;
   platform: Platform;
   trackingTag: string;
-  generatedUrl: string;
   amountCents: number | null;
-  referrer?: string | null;
-  ipHash?: string | null;
 }
 
 export interface CreateCoalitionTargetInput {

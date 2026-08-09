@@ -1,11 +1,58 @@
 # Capital Ark
 
-Non-custodial pledge tracking for collective political fundraising.
+Open-source, non-custodial coordination software for collective political
+fundraising.
 
 A group sets a goal for a candidate, shares one link, and watches the total
 build. Contributions are made **directly on the candidate's own official
 processor** — WinRed, ActBlue, or Anedot. Capital Ark never processes, holds,
 or forwards a dollar.
+
+[Live site](https://capitalark.com) ·
+[Privacy architecture](docs/PRIVACY-ARCHITECTURE.md) ·
+[Integration status](docs/INTEGRATIONS.md) ·
+[Security](SECURITY.md) ·
+[Apache-2.0 license](LICENSE) ·
+[Asset and trademark notice](NOTICE)
+
+## Trust the design, verify the code
+
+Capital Ark is open source because privacy claims should be inspectable, not
+just marketing copy. The current repository has:
+
+- no payment-processing integration, balance, card-number field, payment token,
+  advertising SDK, or customer-data export pipeline;
+- public progress derived from aggregate, receipt-backed records rather than
+  payment-processor access;
+- anonymous-by-default visitor identities and no name requirement for viewing
+  or contributing;
+- explicit consent before a receipt image is sent for automated checking; and
+- source-level controls for receipt disposal, keyed evidence deduplication,
+  hashed network addresses, URL sanitization, rate limits, and security headers.
+
+The most useful audit starting points are
+[`prisma/schema.prisma`](prisma/schema.prisma),
+[`src/lib/tracking/link-builder.ts`](src/lib/tracking/link-builder.ts),
+[`src/app/api/receipts/verify/route.ts`](src/app/api/receipts/verify/route.ts),
+and the full [privacy architecture](docs/PRIVACY-ARCHITECTURE.md).
+
+Open source makes the design auditable; it does **not** by itself prove which
+commit, environment variables, infrastructure logs, or retention settings are
+running at `capitalark.com`. That distinction is documented rather than hidden.
+
+## Data boundary at a glance
+
+| Event | Capital Ark receives | Another service receives |
+| --- | --- | --- |
+| Read a public drive | The application does not ask for a name or account. The host still handles a normal HTTP request and may maintain infrastructure logs. | Hosting/network providers handle the request under their own controls. |
+| Start a contribution | An opaque visitor ID, target, intended amount, tracking tag, time, and a salted one-way network-address hash when available. The hash is cleared after 30 days. | Nothing yet. |
+| Open the official processor | A minimized attribution event containing target, processor, tracking tag, optional amount, and time. Capital Ark does not save the generated URL, referrer, browser user agent, or separate visitor/pledge fields. | The candidate's processor receives the information entered there plus any prefill the visitor explicitly requested. |
+| Check a receipt | After explicit consent, one cropped image is held in request memory. Capital Ark persists only limited match metadata and a keyed digest, not the raw image. | OpenAI receives the image for the one-time check with Responses application-state storage disabled; provider abuse-monitoring retention may still apply. |
+| Claim an account | An email address and authentication state, only if the visitor chooses to claim one. | Supabase Auth receives account data when that optional mode is enabled. |
+| Create a drive | Organizer-supplied drive, candidate, committee, goal, and official processor-link fields plus an opaque organizer ID. | Nothing is sent to a committee merely by creating a drive. |
+
+See [Privacy architecture](docs/PRIVACY-ARCHITECTURE.md) for the exact trust
+boundaries, retained fields, subprocessors, and limitations.
 
 ```bash
 npm install
@@ -13,8 +60,9 @@ npm run dev
 ```
 
 That's it. With no configuration the app runs in **demo mode** against a seeded
-in-memory dataset, so the full flow is walkable immediately. Open
-<http://localhost:3000/c/nc-hemp-industry> for the supplied NC slate.
+in-memory dataset, so public pages and the contribution journey are walkable
+immediately. Receipt confirmation fails closed until `OPENAI_API_KEY` is set.
+Open <http://localhost:3000/c/nc-hemp-industry> for the supplied NC slate.
 
 ---
 
@@ -77,8 +125,33 @@ drive and assert the parameter is gone.
 ## Stack
 
 Next.js 16 (App Router) · React 19 · Tailwind 4 · Prisma 7 · PostgreSQL ·
-optional Supabase Auth/private Storage · Zod 4 · tesseract.js for in-browser
-OCR.
+optional Supabase Auth · Zod 4 · tesseract.js for in-browser OCR.
+
+## Integration status
+
+This is a `0.x` application, not yet a public API product. The existing
+`/api/*` routes are unversioned implementation details for the first-party web
+interface. Most depend on browser cookies, same-origin browser assumptions,
+and in-process rate limits. They may change without notice and must not be
+treated as a supported production contract.
+
+What is supported today:
+
+- link to public coalition and target pages;
+- fork or self-host the application under Apache-2.0; and
+- inspect the current route code to prototype an integration against a fork
+  you control.
+
+What is not implemented yet:
+
+- API keys, OAuth clients, tenant scopes, or a versioned API;
+- signed contribution webhooks or real-time WhatsApp delivery;
+- a supported embeddable widget; or
+- a service-level agreement for the internal aggregate-progress route.
+
+The proposed privacy-preserving contract, event model, and readiness gates are
+in [Integrations](docs/INTEGRATIONS.md). Please do not build a production
+dependency on an internal route and assume it is stable.
 
 ## Layout
 
@@ -126,14 +199,15 @@ the fictional processor examples.
 
 Supabase is optional. Set `NEXT_PUBLIC_AUTH_MODE=local` for the initial
 DigitalOcean deployment: anonymous visitor identities and pledge progress are
-persisted in PostgreSQL, while email account claiming and long-lived private
-receipt storage stay hidden. Required AI receipt checking does not require
-Supabase: the screenshot stays in request memory, is sent to OpenAI only after
-explicit consent, and is discarded after the check. If you later switch to
-Supabase, set the mode to `supabase`, configure Auth and private Storage, and
-then apply `prisma/sql/rls.sql` in the Supabase SQL Editor. That SQL is
-Supabase-specific and must not be run against a generic DigitalOcean PostgreSQL
-database.
+persisted in PostgreSQL, while email account claiming stays hidden. Required AI
+receipt checking does not require Supabase or object storage: the screenshot
+stays in request memory, is sent to OpenAI only after explicit consent, and is
+discarded after the check. If you later switch to
+Supabase, set the mode to `supabase`, configure Auth, and then apply
+`prisma/sql/rls.sql` in the Supabase SQL Editor. That SQL is Supabase-specific,
+keeps browser roles read-only, and must not be run against a generic
+DigitalOcean PostgreSQL database. All application writes continue through the
+authorized server and Prisma; the script does not create receipt storage.
 
 ## Required receipt verification
 
@@ -208,7 +282,7 @@ shared store. App Platform supplies `PORT`; Next.js binds to it automatically.
 | `npm run db:migrate:deploy`   | Apply committed migrations in production              |
 | `npm run db:seed`             | Upsert the audited NC slate                           |
 | `npm run db:deploy`           | Apply production migrations, then upsert the NC slate |
-| `npm run db:expire-pending`   | Expire unresolved intents older than 72 hours         |
+| `npm run db:expire-pending`   | Expire 72-hour intents and clear 30-day network hashes |
 | `node scripts/walk-flow.mjs`  | Walks the whole contributor journey in a real browser |
 | `node scripts/a11y-check.mjs` | Keyboard, focus trap, and reduced-motion checks       |
 | `node scripts/screenshot.mjs` | Captures mobile and desktop screenshots               |
@@ -231,3 +305,28 @@ contributors and are not official fundraising totals.
 There is no column anywhere in the schema for a card number, a payment token,
 or a balance — the zero-custody claim is enforced by there being nothing to
 custody.
+
+## Open-source governance
+
+- **License:** The original software is available under
+  [Apache License 2.0](LICENSE), a permissive OSI-approved license with an
+  explicit patent grant. The Capital Ark name and marks are not licensed for a
+  fork's branding; Apache-2.0 permits only the customary use needed to describe
+  the origin of the software.
+- **Security:** Please follow [SECURITY.md](SECURITY.md) and do not put a
+  vulnerability, secret, or real contribution receipt in a public issue.
+- **Contributions:** Development setup, review expectations, and the privacy
+  checklist are in [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Community:** Participation is governed by the
+  [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Candidate portraits:** Sources and reuse status are recorded alongside the
+  seed data in
+  [`src/lib/data/campaigns/nc-hemp-photo-sources.ts`](src/lib/data/campaigns/nc-hemp-photo-sources.ts).
+
+## Roadmap, not promises
+
+Potential next steps are a versioned aggregate API, scoped developer
+credentials, signed webhooks, an embeddable progress component, an OpenAPI
+description, and deploy-to-source provenance. None is a supported feature until
+its authentication, privacy review, documentation, tests, and compatibility
+policy land in a release.

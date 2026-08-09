@@ -123,7 +123,6 @@ export async function POST(
       trackingTag,
       isAnonymous: user.isAnonymous,
       ipHash,
-      userAgent: request.headers.get("user-agent"),
       clientRequestId: idempotencyKey.data,
     });
     return jsonOk({ pledge }, { headers: { "cache-control": "no-store" } });
