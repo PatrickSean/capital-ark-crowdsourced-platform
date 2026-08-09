@@ -17,6 +17,7 @@ import {
 } from "../src/generated/prisma/enums.js";
 import * as fixtures from "../src/lib/data/fixtures.js";
 import * as ncHemp from "../src/lib/data/campaigns/nc-hemp.js";
+import { createPostgresConfig } from "../src/lib/postgres-config.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -28,7 +29,7 @@ if (!connectionString) {
 }
 
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString }),
+  adapter: new PrismaPg(createPostgresConfig(connectionString)),
 });
 
 async function main() {

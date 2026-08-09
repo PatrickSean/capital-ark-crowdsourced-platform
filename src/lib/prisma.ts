@@ -2,6 +2,7 @@ import "server-only";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
+import { createPostgresConfig } from "@/lib/postgres-config";
 
 /**
  * Prisma singleton.
@@ -19,7 +20,7 @@ function createClient(): PrismaClient | null {
   if (!url) return null;
 
   return new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url }),
+    adapter: new PrismaPg(createPostgresConfig(url)),
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
 }

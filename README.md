@@ -143,8 +143,14 @@ the same DigitalOcean region. Configure:
 - pre-deploy job: `npm run db:deploy`
 - HTTP route: `/`
 - health check: `/api/health`
-- app variables: `DATABASE_URL`, `NEXT_PUBLIC_AUTH_MODE=local`,
-  `NEXT_PUBLIC_SITE_URL=${APP_URL}`, and a random encrypted `IP_HASH_SALT`
+- app variables: `DATABASE_URL`, `DATABASE_CA_CERT`,
+  `NEXT_PUBLIC_AUTH_MODE=local`, `NEXT_PUBLIC_SITE_URL=${APP_URL}`, and a
+  random encrypted `IP_HASH_SALT`
+
+For DigitalOcean Managed PostgreSQL, bind `DATABASE_CA_CERT` to the database
+component's `${<database-component>.CA_CERT}` value. The Prisma runtime and
+seed job use it to verify the database certificate without disabling TLS
+verification.
 
 Keep one service instance until the in-process rate limiter is replaced by a
 shared store. App Platform supplies `PORT`; Next.js binds to it automatically.
