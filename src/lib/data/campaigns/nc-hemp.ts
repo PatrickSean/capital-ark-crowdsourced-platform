@@ -35,6 +35,7 @@ import type {
   FixtureCoalition,
   FixtureTarget,
 } from "../fixtures";
+import { getNcHempCandidatePhotoSource } from "./nc-hemp-photo-sources";
 
 const id = (n: string) => `00000000-0000-4000-8000-${n.padStart(12, "0")}`;
 export const HEMP_LAUNCHED_AT = new Date("2026-08-08T00:00:00.000Z");
@@ -301,7 +302,7 @@ export const hempCandidates: FixtureCandidate[] = ROWS.map((row) => ({
   state: "NC",
   district: row.district,
   bio: null,
-  photoUrl: null,
+  photoUrl: getNcHempCandidatePhotoSource(row.fullName)?.assetPath ?? null,
   donationUrl: row.donationUrl,
   donationUrlVerifiedAt: VERIFIED_AT,
   platform: row.platform,

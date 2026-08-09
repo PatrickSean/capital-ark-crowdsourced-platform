@@ -8,6 +8,7 @@ import { formatCentsShort, parseAmountToCents } from "@/lib/money";
 import { PLATFORM_LABELS } from "@/lib/tracking/link-builder";
 import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
 import { isAiReceiptReviewConfigured } from "@/lib/receipts/config";
+import { getNcHempCandidatePhotoSource } from "@/lib/data/campaigns/nc-hemp-photo-sources";
 import { SiteHeader } from "@/components/layout/site-header";
 import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
 import { CoalitionVerificationBadge } from "@/components/coalitions/coalition-verification-badge";
@@ -105,6 +106,9 @@ export default async function TargetPage({
   }
 
   const { candidate, coalition, progress } = target;
+  const namedPhotoSource = getNcHempCandidatePhotoSource(candidate.fullName);
+  const photoSource =
+    namedPhotoSource?.assetPath === candidate.photoUrl ? namedPhotoSource : null;
   const activity = await activityPromise;
 
   return (
@@ -195,6 +199,21 @@ export default async function TargetPage({
                           aria-label={`Open the official government profile for ${candidate.fullName}`}
                         >
                           Official profile
+                        </a>
+                      </>
+                    )}
+                    {photoSource && (
+                      <>
+                        {" · "}
+                        <a
+                          href={photoSource.sourcePageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer nofollow"
+                          className="font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-900"
+                          aria-label={`View the source for ${candidate.fullName}'s photo`}
+                          title={photoSource.credit}
+                        >
+                          Photo: {photoSource.shortCredit}
                         </a>
                       </>
                     )}

@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Jurisdiction, Party } from "@/generated/prisma/enums";
 import {
@@ -7,6 +9,10 @@ import {
   hempOrganizer,
   hempTargets,
 } from "./nc-hemp";
+import {
+  getNcHempCandidatePhotoSource,
+  NC_HEMP_CANDIDATE_PHOTOS,
+} from "./nc-hemp-photo-sources";
 
 const expected = [
   ["Destin Hall", "House District 87", Party.REPUBLICAN, 150_000],
@@ -54,6 +60,35 @@ describe("verified NC Hemp fundraising slate", () => {
   it("reserves one stable launch-history event id for each target", () => {
     expect(hempLaunchActivityIds).toHaveLength(hempTargets.length);
     expect(new Set(hempLaunchActivityIds).size).toBe(hempTargets.length);
+  });
+
+  it("ships a locally optimized portrait with source provenance for every candidate", () => {
+    expect(Object.keys(NC_HEMP_CANDIDATE_PHOTOS)).toHaveLength(
+      hempCandidates.length,
+    );
+
+    for (const candidate of hempCandidates) {
+      const source = getNcHempCandidatePhotoSource(candidate.fullName);
+
+      expect(source).not.toBeNull();
+      if (!source) {
+        throw new Error(`Missing portrait source for ${candidate.fullName}`);
+      }
+
+      expect(candidate.photoUrl).toBe(source.assetPath);
+      expect(source.sourcePageUrl).toMatch(/^https:\/\//);
+      expect(source.licenseUrl).toMatch(/^https:\/\//);
+      expect(source.credit.length).toBeGreaterThan(0);
+      expect(
+        existsSync(
+          path.join(process.cwd(), "public", source.assetPath.slice(1)),
+        ),
+      ).toBe(true);
+    }
+
+    expect(
+      new Set(hempCandidates.map((candidate) => candidate.photoUrl)).size,
+    ).toBe(hempCandidates.length);
   });
 
   it("stores current committee and government identifiers", () => {

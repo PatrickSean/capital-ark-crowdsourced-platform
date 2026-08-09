@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Card, PartyBadge, ProcessorBadge } from "@/components/ui/primitives";
 import { LayeredProgressBar } from "./layered-progress-bar";
@@ -104,13 +105,16 @@ export function Avatar({
     .toUpperCase();
 
   const dimension = size === "lg" ? "size-20 text-2xl" : "size-14 text-lg";
+  const pixels = size === "lg" ? 80 : 56;
 
   if (photoUrl) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
+      <Image
         src={photoUrl}
         alt=""
+        width={pixels}
+        height={pixels}
+        sizes={`${pixels}px`}
         className={`${dimension} shrink-0 rounded-full object-cover ring-1 ring-ink-200`}
       />
     );
