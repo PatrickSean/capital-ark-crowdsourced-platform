@@ -8,6 +8,10 @@ import {
   signLocalSessionId,
   verifyLocalSessionCookie,
 } from "./local-session-cookie";
+import {
+  INSECURE_DEVELOPMENT_IP_HASH_SALT,
+  isUsableProductionIpHashSalt,
+} from "@/lib/security-secrets";
 
 export interface SessionUser {
   id: string;
@@ -107,10 +111,12 @@ export async function getOrCreateSessionUser(): Promise<SessionUser | null> {
 
 function localSessionSecret(): string | null {
   const configured = process.env.IP_HASH_SALT;
-  if (configured) return configured;
-  return process.env.NODE_ENV === "production"
-    ? null
-    : "dev-only-local-session-secret";
+  if (process.env.NODE_ENV === "production") {
+    return isUsableProductionIpHashSalt(configured) ? configured : null;
+  }
+  return configured?.trim()
+    ? configured
+    : INSECURE_DEVELOPMENT_IP_HASH_SALT;
 }
 
 function isUuid(value: string): boolean {

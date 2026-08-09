@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AUTH_MODE, authConfigurationError } from "@/lib/auth/config";
 import { prisma } from "@/lib/prisma";
+import { isUsableProductionIpHashSalt } from "@/lib/security-secrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,8 +24,10 @@ export async function GET() {
         "NEXT_PUBLIC_AUTH_MODE must be explicit in production.",
       );
     }
-    if (!process.env.IP_HASH_SALT) {
-      configurationErrors.push("IP_HASH_SALT is required in production.");
+    if (!isUsableProductionIpHashSalt(process.env.IP_HASH_SALT)) {
+      configurationErrors.push(
+        "IP_HASH_SALT must be a stable random secret of at least 32 characters in production.",
+      );
     }
     if (!process.env.NEXT_PUBLIC_SITE_URL) {
       configurationErrors.push(

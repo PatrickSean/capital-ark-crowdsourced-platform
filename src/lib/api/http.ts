@@ -3,6 +3,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { ZodType } from "zod";
+import {
+  INSECURE_DEVELOPMENT_IP_HASH_SALT,
+  isUsableProductionIpHashSalt,
+} from "@/lib/security-secrets";
 
 export function jsonOk<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, init);
@@ -73,8 +77,15 @@ export function hashIp(ip: string | null): string | null {
   // Never create predictable hashes of sensitive production traffic. The
   // health check rejects a production deployment without a real salt; this
   // fallback exists only to keep zero-config local development convenient.
-  if (!salt && process.env.NODE_ENV === "production") return null;
-  const effectiveSalt = salt ?? "dev-only-insecure-salt";
+  if (
+    process.env.NODE_ENV === "production" &&
+    !isUsableProductionIpHashSalt(salt)
+  ) {
+    return null;
+  }
+  const effectiveSalt = salt?.trim()
+    ? salt
+    : INSECURE_DEVELOPMENT_IP_HASH_SALT;
   return createHash("sha256")
     .update(`${effectiveSalt}:${ip}`)
     .digest("hex")
