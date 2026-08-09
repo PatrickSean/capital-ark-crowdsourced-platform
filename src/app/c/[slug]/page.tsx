@@ -7,6 +7,7 @@ import { absoluteUrl } from "@/lib/site";
 import { formatCentsShort } from "@/lib/money";
 import { SiteHeader } from "@/components/layout/site-header";
 import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
+import { CoalitionVerificationBadge } from "@/components/coalitions/coalition-verification-badge";
 import { TargetCandidateCard } from "@/components/targets/target-candidate-card";
 import { ActivityFeed } from "@/components/activity/activity-feed";
 import { ShareActionLink } from "@/components/share/share-action-link";
@@ -96,9 +97,14 @@ export default async function CoalitionPage({
 
         <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">
-              {coalition.name}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">
+                {coalition.name}
+              </h1>
+              <CoalitionVerificationBadge
+                status={coalition.verificationStatus}
+              />
+            </div>
             {coalition.description && (
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-600 sm:text-base">
                 {coalition.description}
@@ -114,6 +120,18 @@ export default async function CoalitionPage({
             />
           </div>
         </header>
+
+        {coalition.verificationStatus === "COMMUNITY_UNVERIFIED" && (
+          <div
+            role="note"
+            className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm leading-relaxed text-amber-950 ring-1 ring-amber-200 ring-inset"
+          >
+            <span className="font-bold">Community-created drive.</span>{" "}
+            Capital Ark has not independently verified the organizer,
+            candidate details, or donation links. Confirm the recipient on the
+            processor page before contributing.
+          </div>
+        )}
 
         <section
           aria-label="Coalition totals"

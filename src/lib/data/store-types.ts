@@ -46,16 +46,11 @@ export interface LogClickInput {
   ipHash?: string | null;
 }
 
-export interface CreateCoalitionInput {
-  createdById: string;
-  coalitionName: string;
-  description?: string | null;
-  trackingPrefix: string;
-  flatTrackingTag: boolean;
+export interface CreateCoalitionTargetInput {
   candidateName: string;
   party: Party;
   office: string;
-  state?: string | null;
+  state: string;
   jurisdiction: Jurisdiction;
   donationUrl: string;
   platform: Platform;
@@ -64,6 +59,27 @@ export interface CreateCoalitionInput {
   goalCents: number;
   deadline?: Date | null;
   suggestedAmounts: number[];
+}
+
+export interface CreateCoalitionInput {
+  createdById: string;
+  coalitionName: string;
+  description?: string | null;
+  trackingPrefix: string;
+  flatTrackingTag: boolean;
+  targets: CreateCoalitionTargetInput[];
+}
+
+export interface CreatedCoalitionTarget {
+  candidateName: string;
+  targetSlug: string;
+  platform: Platform;
+}
+
+export interface CreatedCoalition {
+  coalitionSlug: string;
+  firstTargetSlug: string;
+  targets: CreatedCoalitionTarget[];
 }
 
 export interface UserPatch {
@@ -104,7 +120,7 @@ export interface Store {
 
   logClickEvent(input: LogClickInput): Promise<void>;
 
-  createCoalitionWithTarget(
+  createCoalitionWithTargets(
     input: CreateCoalitionInput,
-  ): Promise<{ coalitionSlug: string; targetSlug: string }>;
+  ): Promise<CreatedCoalition>;
 }

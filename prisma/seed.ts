@@ -12,6 +12,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import {
   ActivityType,
+  CoalitionVerificationStatus,
   PledgeStatus,
   TargetStatus,
 } from "../src/generated/prisma/enums.js";
@@ -103,6 +104,9 @@ async function main() {
         description: fixtures.coalition.description,
         trackingPrefix: fixtures.coalition.trackingPrefix,
         flatTrackingTag: fixtures.coalition.flatTrackingTag,
+        verificationStatus: fixtures.coalition.verificationStatus,
+        reviewedAt: fixtures.coalition.reviewedAt,
+        organizerAttestedAt: fixtures.coalition.organizerAttestedAt,
         isPublic: fixtures.coalition.isPublic,
         createdById: fixtures.coalition.createdById,
       },
@@ -271,6 +275,9 @@ async function seedNcHemp() {
     trackingPrefix: ncHemp.hempCoalition.trackingPrefix,
     flatTrackingTag: ncHemp.hempCoalition.flatTrackingTag,
     requireSignIn: ncHemp.hempCoalition.requireSignIn,
+    verificationStatus: CoalitionVerificationStatus.PLATFORM_VERIFIED,
+    reviewedAt: ncHemp.hempCoalition.reviewedAt,
+    organizerAttestedAt: ncHemp.hempCoalition.organizerAttestedAt,
     isPublic: ncHemp.hempCoalition.isPublic,
     createdById: owner.id,
   };

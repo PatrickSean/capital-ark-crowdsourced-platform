@@ -66,25 +66,54 @@ export default async function CoalitionOpenGraphImage({
           fontFamily: "Arial, Helvetica, sans-serif",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 12,
+                color: "white",
+                background: "#0f766e",
+                fontSize: 20,
+                fontWeight: 900,
+              }}
+            >
+              CA
+            </div>
+            <div style={{ fontSize: 25, color: "#475569", fontWeight: 700 }}>
+              Capital Ark
+            </div>
+          </div>
           <div
             style={{
-              width: 46,
-              height: 46,
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 12,
-              color: "white",
-              background: "#0f766e",
-              fontSize: 20,
-              fontWeight: 900,
+              borderRadius: 999,
+              padding: "10px 18px",
+              background:
+                coalition.verificationStatus === "PLATFORM_VERIFIED"
+                  ? "#dcfce7"
+                  : "#fef3c7",
+              color:
+                coalition.verificationStatus === "PLATFORM_VERIFIED"
+                  ? "#166534"
+                  : "#92400e",
+              fontSize: 19,
+              fontWeight: 800,
             }}
           >
-            CA
-          </div>
-          <div style={{ fontSize: 25, color: "#475569", fontWeight: 700 }}>
-            Capital Ark
+            {coalition.verificationStatus === "PLATFORM_VERIFIED"
+              ? "Platform reviewed"
+              : "Community-created · unverified"}
           </div>
         </div>
 

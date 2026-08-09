@@ -35,10 +35,10 @@ export const TURNSTILE_SITE_KEY =
 /**
  * Public drive creation is deliberately opt-in in production.
  *
- * The first NC launch is curated: publishing a political fundraising page
- * needs a verified organizer and a reviewed candidate/committee pairing.
- * Local development keeps the wizard available so the complete product can
- * still be exercised without extra configuration.
+ * This remains an operational and abuse-response kill switch. When enabled,
+ * stable visitors may publish shareable community drives after explicitly
+ * attesting to candidate identity and official links. Those drives remain
+ * unverified unless a trusted server-side review promotes them.
  */
 export const isDriveCreationEnabled =
   process.env.NEXT_PUBLIC_ENABLE_DRIVE_CREATION === "true" ||
@@ -49,8 +49,9 @@ export const isDriveCreationEnabled =
  * Cookie holding the demo-mode identity.
  *
  * Demo mode still needs a stable per-visitor id so pledges, the resume banner
- * and "your pledges" all behave exactly as they will in production. This is a
- * plain opaque uuid: it carries no claims and grants no privileges, since in
- * demo mode there is no real data to protect.
+ * and "your pledges" all behave exactly as they will in production. The value
+ * is an opaque UUID with a server-side HMAC. It carries no claims, but signing
+ * prevents a caller from choosing another user's stable id once local-mode
+ * identities own persistent drives and pledges.
  */
 export const DEMO_UID_COOKIE = "ca_demo_uid";

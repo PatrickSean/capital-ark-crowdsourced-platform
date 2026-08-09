@@ -11,6 +11,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const origin = siteUrl();
   const staticPages: MetadataRoute.Sitemap = [
     { url: origin, changeFrequency: "weekly", priority: 1 },
+    { url: `${origin}/drives`, changeFrequency: "daily", priority: 0.9 },
+    { url: `${origin}/start`, changeFrequency: "monthly", priority: 0.7 },
     {
       url: `${origin}/c/${hempCoalition.slug}`,
       lastModified: VERIFIED_DATE,

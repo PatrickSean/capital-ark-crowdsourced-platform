@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/primitives";
 export const metadata: Metadata = {
   title: "Start a drive",
   description:
-    "Learn how Capital Ark reviews and launches fundraising drives with verified candidate and committee information.",
+    "Create a community fundraising drive for one candidate or an entire slate, then share one link.",
   alternates: { canonical: "/start" },
 };
 
@@ -30,12 +30,12 @@ export default async function StartPage() {
           <h1 className="text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">
             {isDriveCreationEnabled
               ? "Start a fundraising drive"
-              : "New drives are reviewed before launch"}
+              : "Drive creation is temporarily paused"}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-ink-600 sm:text-base">
             {isDriveCreationEnabled
-              ? "One screen. You’ll have a shareable link at the end."
-              : "Capital Ark is beginning with a curated North Carolina drive while organizer verification and review are completed."}
+              ? "Add one candidate or a full slate. You’ll get one shareable link for your community."
+              : "Existing drives remain available while new submissions are paused. Please check back shortly."}
           </p>
         </header>
 
@@ -44,18 +44,17 @@ export default async function StartPage() {
         ) : (
           <Card className="p-6 sm:p-8">
             <p className="text-base font-bold text-ink-900">
-              The North Carolina Hemp Industry drive is live
+              Existing drives are still live
             </p>
             <p className="mt-2 text-sm leading-relaxed text-ink-600">
-              Every candidate, committee, and donation link in this first slate
-              is reviewed before publication. Self-service drive creation will
-              open after verified organizer access is ready.
+              The pause only affects new submissions. You can still open,
+              contribute to, and share every published community drive.
             </p>
             <Link
-              href="/c/nc-hemp-industry"
+              href="/"
               className="tap-target mt-5 inline-flex w-full items-center justify-center rounded-2xl bg-brand-700 px-6 py-4 text-base font-semibold text-white shadow-sm hover:bg-brand-800 sm:w-auto"
             >
-              Explore the NC hemp drive
+              Return home
             </Link>
           </Card>
         )}

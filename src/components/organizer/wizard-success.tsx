@@ -7,30 +7,22 @@ import { Card } from "@/components/ui/primitives";
 import { absoluteUrl } from "@/lib/site";
 import { useNativeShareAvailable } from "@/lib/use-native-share";
 
-/**
- * The end of the wizard.
- *
- * The organizer came here to get a link they can send to people, so that link
- * is the entire screen: big, copyable, with a QR code for in-person events and
- * a native share button for the group chat.
- */
 export function WizardSuccess({
   coalitionSlug,
-  targetSlug,
-  candidateName,
+  coalitionName,
+  candidateCount,
 }: {
   coalitionSlug: string;
-  targetSlug: string;
-  candidateName: string;
+  coalitionName: string;
+  candidateCount: number;
 }) {
-  const shareUrl = absoluteUrl(`/t/${targetSlug}`);
+  const shareUrl = absoluteUrl(`/c/${coalitionSlug}`);
+  const shareText = `Join ${coalitionName} and support ${candidateCount === 1 ? "this candidate" : `these ${candidateCount} candidates`}.`;
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`;
   const [copied, setCopied] = useState(false);
   const canShare = useNativeShareAvailable();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // The form this replaces is long, so without resetting scroll the organizer
-  // lands on the footer instead of the link they came for. Focus follows so
-  // screen reader users are told the view changed.
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
     headingRef.current?.focus();
@@ -48,10 +40,7 @@ export function WizardSuccess({
 
   const share = async () => {
     try {
-      await navigator.share({
-        title: `Support ${candidateName}`,
-        url: shareUrl,
-      });
+      await navigator.share({ title: coalitionName, text: shareText, url: shareUrl });
     } catch {
       void copy();
     }
@@ -61,7 +50,12 @@ export function WizardSuccess({
     <div className="animate-rise space-y-5">
       <Card className="p-6 text-center sm:p-8">
         <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-emerald-100">
-          <svg viewBox="0 0 20 20" fill="currentColor" className="size-8 text-emerald-700" aria-hidden="true">
+          <svg
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="size-8 text-emerald-700"
+            aria-hidden="true"
+          >
             <path
               fillRule="evenodd"
               d="M16.704 5.29a1 1 0 010 1.415l-7.5 7.5a1 1 0 01-1.414 0l-3.5-3.5a1 1 0 111.414-1.414l2.793 2.793 6.793-6.793a1 1 0 011.414 0z"
@@ -77,16 +71,16 @@ export function WizardSuccess({
         >
           Your drive is live
         </h2>
-        <p className="mx-auto mt-2 max-w-sm text-sm text-ink-600">
-          Send this link to your group. Anyone who opens it can contribute
-          straight away — no account needed.
+        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-600">
+          One link now takes your community to the complete {candidateCount === 1 ? "candidate" : `${candidateCount}-candidate`} slate.
+          Contributions still happen on each committee&rsquo;s own processor.
         </p>
 
         <div className="mt-5 rounded-xl bg-ink-50 p-3.5 ring-1 ring-ink-200 ring-inset">
           <p className="break-all font-mono text-sm text-ink-800">{shareUrl}</p>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <Button size="lg" fullWidth onClick={copy}>
             {copied ? "Copied" : "Copy link"}
           </Button>
@@ -95,25 +89,30 @@ export function WizardSuccess({
               Share
             </Button>
           )}
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="tap-target inline-flex min-h-12 items-center justify-center rounded-xl bg-[#0f7b45] px-4 text-sm font-semibold text-white hover:bg-[#0b693a]"
+          >
+            Share to WhatsApp
+          </a>
         </div>
+
+        <p className="mt-3 text-xs leading-relaxed text-ink-500">
+          WhatsApp opens with a ready-to-send message. You choose the chat and
+          review it before sending.
+        </p>
 
         <QrCode value={shareUrl} />
       </Card>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Link
-          href={`/t/${targetSlug}`}
-          className="tap-target flex flex-1 items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-ink-800 ring-1 ring-ink-200 ring-inset hover:bg-ink-50"
-        >
-          View the drive page
-        </Link>
-        <Link
-          href={`/c/${coalitionSlug}`}
-          className="tap-target flex flex-1 items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-ink-800 ring-1 ring-ink-200 ring-inset hover:bg-ink-50"
-        >
-          Go to your dashboard
-        </Link>
-      </div>
+      <Link
+        href={`/c/${coalitionSlug}`}
+        className="tap-target flex w-full items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-ink-800 ring-1 ring-ink-200 ring-inset hover:bg-ink-50"
+      >
+        View and share your drive
+      </Link>
     </div>
   );
 }

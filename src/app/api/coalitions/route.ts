@@ -1,6 +1,5 @@
-import { z } from "zod";
 import { store } from "@/lib/data";
-import { Jurisdiction, Party } from "@/generated/prisma/enums";
+import { CoalitionVerificationStatus } from "@/generated/prisma/enums";
 import { getOrCreateSessionUser } from "@/lib/auth/session";
 import { clientIp, hashIp, jsonError, jsonOk, parseBody } from "@/lib/api/http";
 import { LIMITS, rateLimit } from "@/lib/api/rate-limit";
@@ -10,47 +9,31 @@ import {
   sanitizeTrackingTag,
 } from "@/lib/tracking/link-builder";
 import { isDriveCreationEnabled } from "@/lib/auth/config";
+import { createCoalitionRequestSchema } from "@/lib/coalition-creation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BodySchema = z.object({
-  coalitionName: z.string().trim().min(2).max(80),
-  description: z.string().trim().max(500).optional().nullable(),
-  trackingPrefix: z.string().trim().max(24).optional().nullable(),
-  /** Send the bare prefix as the source code, with nothing appended. */
-  flatTrackingTag: z.boolean().optional().default(false),
-
-  candidateName: z.string().trim().min(2).max(80),
-  office: z.string().trim().min(2).max(80),
-  party: z.enum(Party),
-  state: z.string().trim().length(2).optional().nullable(),
-  jurisdiction: z.enum(Jurisdiction).default(Jurisdiction.FEDERAL),
-  donationUrl: z.string().trim().min(4).max(500),
-  committeeName: z.string().trim().max(120).optional().nullable(),
-
-  goalCents: z.number().int().positive().max(100_000_000_00),
-  deadline: z.string().datetime().optional().nullable(),
-  suggestedAmounts: z.array(z.number().int().positive()).min(1).max(6),
-});
-
 /**
  * POST /api/coalitions
  *
- * The organizer wizard's single submit. Creates candidate, coalition,
- * membership and target in one transaction so a half-built drive can never
- * exist, and returns the shareable link the organizer actually came for.
+ * The organizer wizard's single submit. Creates all candidates, the coalition,
+ * membership and targets in one transaction so a half-built drive can never
+ * exist. Public submissions remain visibly community-created until reviewed.
  */
 export async function POST(request: Request) {
   if (!isDriveCreationEnabled) {
     return jsonError(
       403,
-      "drive_creation_review_required",
-      "New drives are reviewed before publication during the curated launch.",
+      "drive_creation_paused",
+      "New drive creation is temporarily paused.",
     );
   }
 
-  const { data: body, error } = await parseBody(request, BodySchema);
+  const { data: body, error } = await parseBody(
+    request,
+    createCoalitionRequestSchema,
+  );
   if (error) return error;
 
   const user = await getOrCreateSessionUser();
@@ -59,16 +42,6 @@ export async function POST(request: Request) {
       401,
       "identity_required",
       "Please sign in to create a drive.",
-    );
-  }
-
-  // A persistent database is not a demo sandbox. Anonymous visitors may
-  // contribute to the audited public drive, but cannot publish new campaigns.
-  if (user.isAnonymous && !store.isDemo) {
-    return jsonError(
-      403,
-      "permanent_account_required",
-      "A verified organizer account is required to create a drive.",
     );
   }
 
@@ -85,42 +58,61 @@ export async function POST(request: Request) {
     );
   }
 
-  // The processor is derived from the URL rather than asked for, which removes
-  // a decision from the form and a whole category of mismatch bug.
-  const platform = detectPlatform(body.donationUrl);
-  if (!platform) {
+  // The request schema has already normalized each URL and restricted it to a
+  // supported HTTPS processor host. Derive the enum server-side so a client
+  // can never claim a mismatched processor.
+  const normalizedTargets = body.targets.map((target) => ({
+    ...target,
+    platform: detectPlatform(target.donationUrl),
+  }));
+  if (normalizedTargets.some((target) => target.platform === null)) {
     return jsonError(
       422,
       "unsupported_processor",
-      "That link isn't a WinRed, ActBlue, or Anedot donation page. Capital Ark only supports official processors.",
+      "Every link must be a WinRed, ActBlue, or Anedot donation page.",
     );
   }
 
   const trackingPrefix = body.trackingPrefix
     ? sanitizeTrackingTag(body.trackingPrefix)
     : derivePrefix(body.coalitionName);
+  const effectiveTrackingPrefix = trackingPrefix || "COALITION";
 
-  const { coalitionSlug, targetSlug } = await store.createCoalitionWithTarget({
+  const created = await store.createCoalitionWithTargets({
     createdById: user.id,
     coalitionName: body.coalitionName,
     description: body.description ?? null,
-    trackingPrefix: trackingPrefix || "COALITION",
+    trackingPrefix: effectiveTrackingPrefix,
     flatTrackingTag: body.flatTrackingTag,
-    candidateName: body.candidateName,
-    party: body.party,
-    office: body.office,
-    state: body.state ?? null,
-    jurisdiction: body.jurisdiction,
-    donationUrl: body.donationUrl,
-    platform,
-    committeeName: body.committeeName ?? null,
-    targetTitle: `Raise ${formatGoal(body.goalCents)} for ${body.candidateName}`,
-    goalCents: body.goalCents,
-    deadline: body.deadline ? new Date(body.deadline) : null,
-    suggestedAmounts: body.suggestedAmounts,
+    targets: normalizedTargets.map((target) => {
+      // Guarded above; keeping the assertion here makes the store contract
+      // accurately non-null without trusting a client-supplied platform.
+      if (!target.platform) {
+        throw new Error("Validated donation URL has no processor.");
+      }
+      return {
+        candidateName: target.candidateName,
+        party: target.party,
+        office: target.office,
+        state: target.state,
+        jurisdiction: target.jurisdiction,
+        donationUrl: target.donationUrl,
+        platform: target.platform,
+        committeeName: target.committeeName ?? null,
+        targetTitle:
+          `Raise ${formatGoal(target.goalCents)} for ` + target.candidateName,
+        goalCents: target.goalCents,
+        deadline: target.deadline ? new Date(target.deadline) : null,
+        suggestedAmounts: target.suggestedAmounts,
+      };
+    }),
   });
 
-  return jsonOk({ coalitionSlug, targetSlug, platform, trackingPrefix });
+  return jsonOk({
+    ...created,
+    trackingPrefix: effectiveTrackingPrefix,
+    verificationStatus: CoalitionVerificationStatus.COMMUNITY_UNVERIFIED,
+  });
 }
 
 function formatGoal(cents: number): string {

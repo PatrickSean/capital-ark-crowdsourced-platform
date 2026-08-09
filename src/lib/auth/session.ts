@@ -4,6 +4,10 @@ import { cookies } from "next/headers";
 import { store } from "@/lib/data";
 import { DEMO_UID_COOKIE, isSupabaseConfigured } from "./config";
 import { getSupabaseServerClient } from "./supabase-server";
+import {
+  signLocalSessionId,
+  verifyLocalSessionCookie,
+} from "./local-session-cookie";
 
 export interface SessionUser {
   id: string;
@@ -42,8 +46,20 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   }
 
   const cookieStore = await cookies();
-  const demoUid = cookieStore.get(DEMO_UID_COOKIE)?.value;
-  if (!demoUid) return null;
+  const rawCookie = cookieStore.get(DEMO_UID_COOKIE)?.value;
+  if (!rawCookie) return null;
+
+  const secret = localSessionSecret();
+  if (!secret) return null;
+  const demoUid = verifyLocalSessionCookie(rawCookie, secret);
+  if (!demoUid) {
+    // Unsigned cookies predate local-mode ownership. Keep local development
+    // convenient, but production must never trust a caller-chosen user id.
+    if (process.env.NODE_ENV !== "production" && isUuid(rawCookie)) {
+      return { id: rawCookie, isAnonymous: true, email: null, displayName: null };
+    }
+    return null;
+  }
 
   return { id: demoUid, isAnonymous: true, email: null, displayName: null };
 }
@@ -73,8 +89,10 @@ export async function getOrCreateSessionUser(): Promise<SessionUser | null> {
 
   const cookieStore = await cookies();
   const id = crypto.randomUUID();
+  const secret = localSessionSecret();
+  if (!secret) return null;
 
-  cookieStore.set(DEMO_UID_COOKIE, id, {
+  cookieStore.set(DEMO_UID_COOKIE, signLocalSessionId(id, secret), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -85,4 +103,18 @@ export async function getOrCreateSessionUser(): Promise<SessionUser | null> {
   await store.ensureUser(id, { isAnonymous: true });
 
   return { id, isAnonymous: true, email: null, displayName: null };
+}
+
+function localSessionSecret(): string | null {
+  const configured = process.env.IP_HASH_SALT;
+  if (configured) return configured;
+  return process.env.NODE_ENV === "production"
+    ? null
+    : "dev-only-local-session-secret";
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }

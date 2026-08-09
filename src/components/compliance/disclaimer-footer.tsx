@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { PLATFORM_DISCLAIMER } from "@/lib/compliance/attestations";
-import { isDriveCreationEnabled } from "@/lib/auth/config";
 
 export function DisclaimerFooter() {
   return (
@@ -25,12 +24,16 @@ export function DisclaimerFooter() {
               Home
             </Link>
             <Link
-              href={
-                isDriveCreationEnabled ? "/start" : "/c/nc-hemp-industry"
-              }
+              href="/drives"
               className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
             >
-              {isDriveCreationEnabled ? "Start a drive" : "NC hemp drive"}
+              Explore drives
+            </Link>
+            <Link
+              href="/start"
+              className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
+            >
+              Start a drive
             </Link>
             <Link
               href="/compliance"

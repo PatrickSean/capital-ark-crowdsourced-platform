@@ -9,6 +9,7 @@
  */
 export {
   ActivityType,
+  CoalitionVerificationStatus,
   Jurisdiction,
   MemberRole,
   Party,
@@ -19,6 +20,7 @@ export {
 
 import type {
   ActivityType,
+  CoalitionVerificationStatus,
   Jurisdiction,
   Party,
   Platform,
@@ -60,6 +62,8 @@ export interface CoalitionView {
   trackingPrefix: string;
   flatTrackingTag: boolean;
   requireSignIn: boolean;
+  verificationStatus: CoalitionVerificationStatus;
+  reviewedAt: string | null;
   memberCount: number;
 }
 

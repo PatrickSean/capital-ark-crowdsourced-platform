@@ -24,7 +24,12 @@
  *    primary-plus-general limits, and FEC lists Friends of Tim Moore
  *    (C00856005) as the principal campaign committee for candidate H4NC14015.
  */
-import { Jurisdiction, Party, Platform } from "@/generated/prisma/enums";
+import {
+  CoalitionVerificationStatus,
+  Jurisdiction,
+  Party,
+  Platform,
+} from "@/generated/prisma/enums";
 import type {
   FixtureCandidate,
   FixtureCoalition,
@@ -32,6 +37,7 @@ import type {
 } from "../fixtures";
 
 const id = (n: string) => `00000000-0000-4000-8000-${n.padStart(12, "0")}`;
+const VERIFIED_AT = new Date("2026-08-08T00:00:00.000Z");
 
 export const HEMP_IDS = {
   organizer: id("200"),
@@ -60,6 +66,9 @@ export const hempCoalition: FixtureCoalition = {
   // string HEMP on the contribution, with nothing appended.
   flatTrackingTag: true,
   requireSignIn: false,
+  verificationStatus: CoalitionVerificationStatus.PLATFORM_VERIFIED,
+  reviewedAt: VERIFIED_AT,
+  organizerAttestedAt: null,
   isPublic: true,
   createdById: HEMP_IDS.organizer,
 };
@@ -95,8 +104,6 @@ interface HempRow {
 
 // All offices, districts, parties, committee IDs, and processor links were
 // re-verified against NCGA/NCSBE/FEC/House records and current campaign sites.
-const VERIFIED_AT = new Date("2026-08-08T00:00:00.000Z");
-
 const ROWS: HempRow[] = [
   {
     n: "220",

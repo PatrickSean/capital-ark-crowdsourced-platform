@@ -11,6 +11,7 @@
  */
 import {
   ActivityType,
+  CoalitionVerificationStatus,
   Jurisdiction,
   Party,
   Platform,
@@ -189,6 +190,9 @@ export interface FixtureCoalition {
   trackingPrefix: string;
   flatTrackingTag: boolean;
   requireSignIn: boolean;
+  verificationStatus: CoalitionVerificationStatus;
+  reviewedAt: Date | null;
+  organizerAttestedAt: Date | null;
   isPublic: boolean;
   createdById: string;
 }
@@ -203,6 +207,9 @@ export const coalition: FixtureCoalition = {
   trackingPrefix: "NCSBC",
   flatTrackingTag: false,
   requireSignIn: false,
+  verificationStatus: CoalitionVerificationStatus.COMMUNITY_UNVERIFIED,
+  reviewedAt: null,
+  organizerAttestedAt: null,
   isPublic: true,
   createdById: IDS.organizer,
 };

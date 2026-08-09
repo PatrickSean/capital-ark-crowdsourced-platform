@@ -57,12 +57,21 @@ export default async function TermsPage() {
               its processor make the final eligibility and acceptance decision.
             </Term>
             <Term title="Organizer and content responsibilities">
-              New drives may be reviewed before publication. Organizers must
-              provide accurate candidate, committee, office, jurisdiction,
-              goal, and processor information and must not imply campaign
-              authorization. Do not use Capital Ark to impersonate a committee,
-              misdirect supporters, evade campaign-finance rules, scrape private
-              data, disrupt the service, or publish unlawful content.
+              Community-created drives are labeled as unverified unless and
+              until Capital Ark independently reviews them. Organizers must
+              review and provide accurate candidate, committee, office,
+              jurisdiction, goal, and processor information and must not imply
+              campaign authorization. Do not use Capital Ark to impersonate a
+              committee, misdirect supporters, evade campaign-finance rules,
+              scrape private data, disrupt the service, or publish unlawful
+              content.
+            </Term>
+            <Term title="Sharing through third-party apps">
+              Share buttons can open an independent app, such as WhatsApp, with
+              a draft message. You choose the recipient and send the message
+              yourself. Capital Ark does not join your groups, read your chats,
+              or automatically publish receipt images or personal contribution
+              details to them.
             </Term>
             <Term title="No legal, tax, or accounting advice">
               Explanations on this site are operational safeguards, not advice.

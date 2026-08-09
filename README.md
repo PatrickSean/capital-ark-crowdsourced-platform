@@ -145,9 +145,13 @@ the same DigitalOcean region. Configure:
 - HTTP route: `/`
 - health check: `/api/health`
 - app variables: `DATABASE_URL`, `DATABASE_CA_CERT`,
-  `NEXT_PUBLIC_AUTH_MODE=local`, `NEXT_PUBLIC_ENABLE_DRIVE_CREATION=false`,
+  `NEXT_PUBLIC_AUTH_MODE=local`, `NEXT_PUBLIC_ENABLE_DRIVE_CREATION=true`,
   `NEXT_PUBLIC_SITE_URL=${APP_URL}`, `SEED_DEMO_DATA=false`, and a random
   encrypted `IP_HASH_SALT`
+
+Public creation accepts one to twenty candidates per drive. Community-created
+drives are immediately shareable and visibly labeled unverified; the feature
+flag remains an emergency abuse-response kill switch.
 
 Set every `NEXT_PUBLIC_*` variable to build-and-runtime scope. Next.js embeds
 these values in the browser bundle during the build; runtime-only values will

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { isDriveCreationEnabled } from "@/lib/auth/config";
 
 export function SiteHeader({ demoMode }: { demoMode?: boolean }) {
   return (
@@ -20,22 +19,33 @@ export function SiteHeader({ demoMode }: { demoMode?: boolean }) {
       )}
 
       <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
           <Link href="/" className="tap-target flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-brand-700 text-sm font-black text-white">
+            <span
+              aria-hidden="true"
+              className="flex size-8 items-center justify-center rounded-lg bg-brand-700 text-sm font-black text-white"
+            >
               CA
             </span>
-            <span className="text-base font-bold tracking-tight text-ink-900">
+            <span className="text-base font-bold tracking-tight text-ink-900 max-[359px]:sr-only">
               Capital Ark
             </span>
           </Link>
 
-          <Link
-            href={isDriveCreationEnabled ? "/start" : "/c/nc-hemp-industry"}
-            className="tap-target inline-flex items-center rounded-xl bg-ink-900 px-4 text-sm font-semibold text-white hover:bg-ink-800"
-          >
-            {isDriveCreationEnabled ? "Start a drive" : "View campaign"}
-          </Link>
+          <nav aria-label="Primary" className="flex items-center gap-1 sm:gap-2">
+            <Link
+              href="/drives"
+              className="tap-target inline-flex items-center rounded-xl px-2 text-xs font-semibold text-ink-700 hover:bg-ink-100 hover:text-ink-950 sm:px-3 sm:text-sm"
+            >
+              Explore drives
+            </Link>
+            <Link
+              href="/start"
+              className="tap-target inline-flex items-center rounded-xl bg-ink-900 px-3 text-xs font-semibold text-white hover:bg-ink-800 sm:px-4 sm:text-sm"
+            >
+              Start a drive
+            </Link>
+          </nav>
         </div>
       </header>
     </>

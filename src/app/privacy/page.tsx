@@ -46,6 +46,13 @@ export default async function PrivacyPage() {
               abuse prevention.
             </p>
             <p>
+              When you create a drive, Capital Ark stores the drive description,
+              candidate and committee details, goals, official processor links,
+              and an opaque organizer identifier so the submission can be
+              attributed and moderated. Community-created drives are labeled
+              separately from information independently reviewed by Capital Ark.
+            </p>
+            <p>
               If you return and confirm, Capital Ark stores the amount you say
               you contributed, the required attestation version, and the time.
               The recipient committee&rsquo;s processor—not Capital Ark—collects
@@ -76,6 +83,11 @@ export default async function PrivacyPage() {
               application, database, authentication, or private storage. When
               you open a donation page, you leave Capital Ark and the campaign
               processor&rsquo;s own privacy policy applies.
+            </p>
+            <p>
+              A WhatsApp share button opens WhatsApp with a draft containing
+              public drive information. Capital Ark does not receive your chat
+              list, choose a group, or send the message for you.
             </p>
           </PolicySection>
 

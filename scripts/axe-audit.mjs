@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 const BASE = process.env.BASE ?? "http://localhost:3210";
 const routes = [
   "/",
+  "/drives",
   "/c/nc-hemp-industry",
   "/t/hemp-destin-hall",
   "/start",

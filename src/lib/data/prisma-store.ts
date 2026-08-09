@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   ActivityType,
+  CoalitionVerificationStatus,
   PledgeStatus,
   TargetStatus,
 } from "@/generated/prisma/enums";
@@ -35,6 +36,8 @@ type CoalitionRow = {
   trackingPrefix: string;
   flatTrackingTag: boolean;
   requireSignIn: boolean;
+  verificationStatus: CoalitionVerificationStatus;
+  reviewedAt: Date | null;
   _count?: { members: number };
 };
 
@@ -72,6 +75,8 @@ function toCoalitionView(row: CoalitionRow): CoalitionView {
     trackingPrefix: row.trackingPrefix,
     flatTrackingTag: row.flatTrackingTag,
     requireSignIn: row.requireSignIn,
+    verificationStatus: row.verificationStatus,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
     memberCount: row._count?.members ?? 0,
   };
 }
@@ -495,36 +500,42 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       });
     },
 
-    async createCoalitionWithTarget(input: CreateCoalitionInput) {
+    async createCoalitionWithTargets(input: CreateCoalitionInput) {
+      if (input.targets.length < 1 || input.targets.length > 20) {
+        throw new RangeError("A drive must contain between 1 and 20 targets.");
+      }
+
       const coalitionSlug = await nextFreeSlug(input.coalitionName, async (s) =>
         Boolean(await prisma.coalition.findUnique({ where: { slug: s } })),
       );
-      const targetSlug = await nextFreeSlug(
-        `${input.candidateName}-${input.coalitionName}`,
-        async (s) =>
-          Boolean(
-            await prisma.fundraisingTarget.findUnique({ where: { slug: s } }),
-          ),
-      );
-      const candidateSlug = await nextFreeSlug(input.candidateName, async (s) =>
-        Boolean(await prisma.candidate.findUnique({ where: { slug: s } })),
-      );
+      const reservedCandidateSlugs = new Set<string>();
+      const reservedTargetSlugs = new Set<string>();
+      const slugs: { candidateSlug: string; targetSlug: string }[] = [];
 
-      await prisma.$transaction(async (tx) => {
-        const candidate = await tx.candidate.create({
-          data: {
-            slug: candidateSlug,
-            fullName: input.candidateName,
-            party: input.party,
-            office: input.office,
-            state: input.state ?? null,
-            jurisdiction: input.jurisdiction,
-            donationUrl: input.donationUrl,
-            platform: input.platform,
-            committeeName: input.committeeName ?? input.candidateName,
-          },
-        });
+      for (const target of input.targets) {
+        const candidateSlug = await nextFreeSlug(
+          target.candidateName,
+          async (slug) =>
+            reservedCandidateSlugs.has(slug) ||
+            Boolean(
+              await prisma.candidate.findUnique({ where: { slug } }),
+            ),
+        );
+        reservedCandidateSlugs.add(candidateSlug);
 
+        const targetSlug = await nextFreeSlug(
+          `${target.candidateName}-${input.coalitionName}`,
+          async (slug) =>
+            reservedTargetSlugs.has(slug) ||
+            Boolean(
+              await prisma.fundraisingTarget.findUnique({ where: { slug } }),
+            ),
+        );
+        reservedTargetSlugs.add(targetSlug);
+        slugs.push({ candidateSlug, targetSlug });
+      }
+
+      const createdTargets = await prisma.$transaction(async (tx) => {
         const coalition = await tx.coalition.create({
           data: {
             slug: coalitionSlug,
@@ -532,35 +543,78 @@ export function createPrismaStore(prisma: PrismaClient): Store {
             description: input.description ?? null,
             trackingPrefix: input.trackingPrefix,
             flatTrackingTag: input.flatTrackingTag,
+            verificationStatus:
+              CoalitionVerificationStatus.COMMUNITY_UNVERIFIED,
+            organizerAttestedAt: new Date(),
             createdById: input.createdById,
             members: { create: { userId: input.createdById, role: "OWNER" } },
           },
         });
 
-        await tx.fundraisingTarget.create({
-          data: {
-            slug: targetSlug,
-            coalitionId: coalition.id,
-            candidateId: candidate.id,
-            title: input.targetTitle,
-            description: input.description ?? null,
-            goalCents: input.goalCents,
-            deadline: input.deadline ?? null,
-            suggestedAmounts: input.suggestedAmounts,
-            createdById: input.createdById,
-          },
-        });
+        const created = [];
+        for (const [index, target] of input.targets.entries()) {
+          const targetSlugs = slugs[index];
+          if (!targetSlugs) {
+            throw new Error("Missing allocated target slug.");
+          }
 
-        await tx.activityEvent.create({
-          data: {
-            coalitionId: coalition.id,
-            type: ActivityType.TARGET_CREATED,
-            message: input.targetTitle,
-          },
-        });
+          const candidate = await tx.candidate.create({
+            data: {
+              slug: targetSlugs.candidateSlug,
+              fullName: target.candidateName,
+              party: target.party,
+              office: target.office,
+              state: target.state,
+              jurisdiction: target.jurisdiction,
+              donationUrl: target.donationUrl,
+              platform: target.platform,
+              committeeName: target.committeeName ?? null,
+            },
+          });
+
+          const fundraisingTarget = await tx.fundraisingTarget.create({
+            data: {
+              slug: targetSlugs.targetSlug,
+              coalitionId: coalition.id,
+              candidateId: candidate.id,
+              title: target.targetTitle,
+              description: input.description ?? null,
+              goalCents: target.goalCents,
+              deadline: target.deadline ?? null,
+              suggestedAmounts: target.suggestedAmounts,
+              createdById: input.createdById,
+            },
+          });
+
+          await tx.activityEvent.create({
+            data: {
+              coalitionId: coalition.id,
+              targetId: fundraisingTarget.id,
+              type: ActivityType.TARGET_CREATED,
+              message: target.targetTitle,
+            },
+          });
+
+          created.push({
+            candidateName: target.candidateName,
+            targetSlug: fundraisingTarget.slug,
+            platform: target.platform,
+          });
+        }
+
+        return created;
       });
 
-      return { coalitionSlug, targetSlug };
+      const firstTarget = createdTargets[0];
+      if (!firstTarget) {
+        throw new Error("A created drive must contain at least one target.");
+      }
+
+      return {
+        coalitionSlug,
+        firstTargetSlug: firstTarget.targetSlug,
+        targets: createdTargets,
+      };
     },
   };
 }

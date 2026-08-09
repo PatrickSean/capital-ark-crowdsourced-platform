@@ -63,6 +63,14 @@ enum TargetStatus {
   ARCHIVED
 }
 
+/// Public creation is deliberately shareable without implying endorsement.
+/// Only trusted server-side/admin workflows may promote a coalition to
+/// PLATFORM_VERIFIED; the public creation API always writes the community tier.
+enum CoalitionVerificationStatus {
+  COMMUNITY_UNVERIFIED
+  PLATFORM_VERIFIED
+}
+
 enum ActivityType {
   PLEDGE_CONFIRMED
   TARGET_CREATED
@@ -124,6 +132,13 @@ model Coalition {
   /// When true, only permanent (non-anonymous) accounts may pledge. Off by
   /// default so the shared-link path stays one tap.
   requireSignIn Boolean @default(false) @map("require_sign_in")
+
+  /// Community drives are public and shareable, but are never represented as
+  /// having been reviewed by Capital Ark. `isPublic` remains the moderation
+  /// kill switch for removing abusive or misleading content.
+  verificationStatus CoalitionVerificationStatus @default(COMMUNITY_UNVERIFIED) @map("verification_status")
+  reviewedAt         DateTime?                     @map("reviewed_at")
+  organizerAttestedAt DateTime?                    @map("organizer_attested_at")
 
   isPublic    Boolean  @default(true) @map("is_public")
   createdById String   @map("created_by_id") @db.Uuid

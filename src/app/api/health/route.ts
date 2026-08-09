@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  AUTH_MODE,
-  authConfigurationError,
-  isDriveCreationEnabled,
-} from "@/lib/auth/config";
+import { AUTH_MODE, authConfigurationError } from "@/lib/auth/config";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -38,11 +34,6 @@ export async function GET() {
     if (process.env.SEED_DEMO_DATA === "true") {
       configurationErrors.push(
         "SEED_DEMO_DATA must be false in production.",
-      );
-    }
-    if (AUTH_MODE === "local" && isDriveCreationEnabled) {
-      configurationErrors.push(
-        "Drive creation requires permanent organizer authentication.",
       );
     }
   }

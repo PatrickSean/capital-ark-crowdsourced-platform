@@ -17,6 +17,7 @@ import { useIdentity } from "@/lib/auth/use-identity";
 import { isSupabaseConfigured } from "@/lib/auth/config";
 import { cn } from "@/lib/cn";
 import type { ProgressSnapshot, TargetView } from "@/lib/domain/types";
+import { absoluteUrl } from "@/lib/site";
 import {
   openPlaceholderWindow,
   useReturnDetection,
@@ -710,6 +711,14 @@ function DoneStep({
   amountCents: number;
   receiptOutcome: ReceiptOutcome;
 }) {
+  const shareUrl = absoluteUrl(`/t/${target.slug}`);
+  const shareText = [
+    `I contributed ${formatCents(amountCents)} to support ${target.candidate.fullName} through ${target.coalition.name}.`,
+    target.title,
+    shareUrl,
+  ].join("\n");
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+
   return (
     <div className="space-y-4 py-2">
       <div className="text-center">
@@ -738,6 +747,21 @@ function DoneStep({
             : receiptOutcome === "failed"
               ? " We couldn't attach your receipt, so this counts as self-reported."
               : " This counts as self-reported."}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#0f7b45] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#0b6b3a] active:bg-[#075a32]"
+        >
+          Share on WhatsApp
+        </a>
+        <p className="text-center text-xs leading-relaxed text-ink-500">
+          Opens a draft with your recorded amount and this drive&rsquo;s public
+          link. You choose where it goes and tap Send.
         </p>
       </div>
 

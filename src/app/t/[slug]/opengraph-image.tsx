@@ -66,25 +66,54 @@ export default async function OgImage({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
+                  background: "#0f766e",
+                  color: "white",
+                  fontSize: 20,
+                  fontWeight: 900,
+                }}
+              >
+                CA
+              </div>
+              <div style={{ fontSize: 24, color: "#64748b", fontWeight: 600 }}>
+                {coalition.name}
+              </div>
+            </div>
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: "#0f766e",
-                color: "white",
-                fontSize: 20,
-                fontWeight: 900,
+                borderRadius: 999,
+                padding: "9px 16px",
+                background:
+                  coalition.verificationStatus === "PLATFORM_VERIFIED"
+                    ? "#dcfce7"
+                    : "#fef3c7",
+                color:
+                  coalition.verificationStatus === "PLATFORM_VERIFIED"
+                    ? "#166534"
+                    : "#92400e",
+                fontSize: 18,
+                fontWeight: 800,
               }}
             >
-              CA
-            </div>
-            <div style={{ fontSize: 24, color: "#64748b", fontWeight: 600 }}>
-              {coalition.name}
+              {coalition.verificationStatus === "PLATFORM_VERIFIED"
+                ? "Platform reviewed"
+                : "Community-created · unverified"}
             </div>
           </div>
 

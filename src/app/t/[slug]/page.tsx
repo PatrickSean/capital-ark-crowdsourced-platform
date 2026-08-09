@@ -9,6 +9,7 @@ import { PLATFORM_LABELS } from "@/lib/tracking/link-builder";
 import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
 import { SiteHeader } from "@/components/layout/site-header";
 import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
+import { CoalitionVerificationBadge } from "@/components/coalitions/coalition-verification-badge";
 import { SourceOfFundsNotice } from "@/components/compliance/source-of-funds-notice";
 import { LayeredProgressBar } from "@/components/targets/layered-progress-bar";
 import { DeadlinePill } from "@/components/targets/deadline-pill";
@@ -104,19 +105,36 @@ export default async function TargetPage({
       <SiteHeader demoMode={isDemoMode} />
 
       <main id="main-content" className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
-        <Link
-          href={`/c/${coalition.slug}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-600 hover:text-ink-900"
-        >
-          <svg viewBox="0 0 20 20" fill="currentColor" className="size-4" aria-hidden="true">
-            <path
-              fillRule="evenodd"
-              d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
-              clipRule="evenodd"
-            />
-          </svg>
-          {coalition.name}
-        </Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Link
+            href={`/c/${coalition.slug}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-600 hover:text-ink-900"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="size-4" aria-hidden="true">
+              <path
+                fillRule="evenodd"
+                d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
+                clipRule="evenodd"
+              />
+            </svg>
+            {coalition.name}
+          </Link>
+          <CoalitionVerificationBadge
+            status={coalition.verificationStatus}
+          />
+        </div>
+
+        {coalition.verificationStatus === "COMMUNITY_UNVERIFIED" && (
+          <div
+            role="note"
+            className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm leading-relaxed text-amber-950 ring-1 ring-amber-200 ring-inset"
+          >
+            <span className="font-bold">Community-created drive.</span>{" "}
+            Candidate details and this donation link have not been
+            independently verified by Capital Ark. Confirm the recipient on
+            the processor page before contributing.
+          </div>
+        )}
 
         <Card className="mt-4 overflow-hidden">
           <div className="p-5 sm:p-7">

@@ -1,4 +1,8 @@
-import { ActivityType, PledgeStatus } from "@/generated/prisma/enums";
+import {
+  ActivityType,
+  CoalitionVerificationStatus,
+  PledgeStatus,
+} from "@/generated/prisma/enums";
 import type {
   ActivityItem,
   CandidateView,
@@ -208,6 +212,8 @@ function toCoalitionView(c: fixtures.FixtureCoalition): CoalitionView {
     trackingPrefix: c.trackingPrefix,
     flatTrackingTag: c.flatTrackingTag,
     requireSignIn: c.requireSignIn,
+    verificationStatus: c.verificationStatus,
+    reviewedAt: c.reviewedAt?.toISOString() ?? null,
     memberCount,
   };
 }
@@ -455,37 +461,81 @@ export const demoStore: Store = {
     // Demo mode keeps no analytics history; the Prisma store persists these.
   },
 
-  async createCoalitionWithTarget(input: CreateCoalitionInput) {
-    const candidateId = crypto.randomUUID();
-    state.candidates.set(candidateId, {
-      id: candidateId,
-      slug: slugify(input.candidateName),
-      fullName: input.candidateName,
-      legalName: null,
-      party: input.party,
-      office: input.office,
-      state: input.state ?? "",
-      district: null,
-      bio: null,
-      photoUrl: null,
-      donationUrl: input.donationUrl,
-      donationUrlVerifiedAt: null,
-      platform: input.platform,
-      websiteUrl: null,
-      officialProfileUrl: null,
-      officialDataVerifiedAt: null,
-      jurisdiction: input.jurisdiction,
-      committeeName: input.committeeName ?? input.candidateName,
-      ncsbeCommitteeId: null,
-      fecCandidateId: null,
-      fecCommitteeId: null,
-    });
+  async createCoalitionWithTargets(input: CreateCoalitionInput) {
+    if (input.targets.length < 1 || input.targets.length > 20) {
+      throw new RangeError("A drive must contain between 1 and 20 targets.");
+    }
 
     const coalitionId = crypto.randomUUID();
     const coalitionSlug = uniqueSlug(input.coalitionName, (s) =>
       [...state.coalitions.values()].some((c) => c.slug === s),
     );
-    state.coalitions.set(coalitionId, {
+
+    const reservedCandidateSlugs = new Set<string>();
+    const reservedTargetSlugs = new Set<string>();
+    const staged = input.targets.map((target) => {
+      const candidateId = crypto.randomUUID();
+      const candidateSlug = uniqueSlug(target.candidateName, (slug) =>
+        reservedCandidateSlugs.has(slug) ||
+        [...state.candidates.values()].some(
+          (candidate) => candidate.slug === slug,
+        ),
+      );
+      reservedCandidateSlugs.add(candidateSlug);
+
+      const targetId = crypto.randomUUID();
+      const targetSlug = uniqueSlug(
+        `${target.candidateName}-${input.coalitionName}`,
+        (slug) =>
+          reservedTargetSlugs.has(slug) ||
+          [...state.targets.values()].some(
+            (fundraisingTarget) => fundraisingTarget.slug === slug,
+          ),
+      );
+      reservedTargetSlugs.add(targetSlug);
+
+      const candidate: fixtures.FixtureCandidate = {
+        id: candidateId,
+        slug: candidateSlug,
+        fullName: target.candidateName,
+        legalName: null,
+        party: target.party,
+        office: target.office,
+        state: target.state,
+        district: null,
+        bio: null,
+        photoUrl: null,
+        donationUrl: target.donationUrl,
+        donationUrlVerifiedAt: null,
+        platform: target.platform,
+        websiteUrl: null,
+        officialProfileUrl: null,
+        officialDataVerifiedAt: null,
+        jurisdiction: target.jurisdiction,
+        committeeName: target.committeeName ?? null,
+        ncsbeCommitteeId: null,
+        fecCandidateId: null,
+        fecCommitteeId: null,
+      };
+      const fundraisingTarget: fixtures.FixtureTarget & {
+        coalitionId: string;
+      } = {
+        id: targetId,
+        slug: targetSlug,
+        candidateId,
+        coalitionId,
+        title: target.targetTitle,
+        description: input.description ?? null,
+        goalCents: target.goalCents,
+        deadline: target.deadline ?? null,
+        suggestedAmounts: target.suggestedAmounts,
+      };
+
+      return { candidate, fundraisingTarget, platform: target.platform };
+    });
+
+    const now = new Date();
+    const coalition: fixtures.FixtureCoalition = {
       id: coalitionId,
       slug: coalitionSlug,
       name: input.coalitionName,
@@ -494,9 +544,17 @@ export const demoStore: Store = {
       trackingPrefix: input.trackingPrefix,
       flatTrackingTag: input.flatTrackingTag,
       requireSignIn: false,
+      verificationStatus:
+        CoalitionVerificationStatus.COMMUNITY_UNVERIFIED,
+      reviewedAt: null,
+      organizerAttestedAt: now,
       isPublic: true,
       createdById: input.createdById,
-    });
+    };
+
+    // Commit the fully staged graph together. No visible state is mutated until
+    // every candidate and target has been validated and allocated a unique id.
+    state.coalitions.set(coalitionId, coalition);
 
     state.memberships.set(`${coalitionId}:${input.createdById}`, {
       userId: input.createdById,
@@ -504,24 +562,34 @@ export const demoStore: Store = {
       role: "OWNER",
     });
 
-    const targetId = crypto.randomUUID();
-    const targetSlug = uniqueSlug(
-      `${input.candidateName}-${input.coalitionName}`,
-      (s) => [...state.targets.values()].some((t) => t.slug === s),
+    for (const { candidate, fundraisingTarget } of staged) {
+      state.candidates.set(candidate.id, candidate);
+      state.targets.set(fundraisingTarget.id, fundraisingTarget);
+    }
+    state.activity.unshift(
+      ...staged.map(({ fundraisingTarget }) => ({
+        id: crypto.randomUUID(),
+        coalitionId,
+        targetId: fundraisingTarget.id,
+        type: ActivityType.TARGET_CREATED,
+        actorLabel: null,
+        amountCents: null,
+        message: fundraisingTarget.title,
+        createdAt: now,
+      })),
     );
-    state.targets.set(targetId, {
-      id: targetId,
-      slug: targetSlug,
-      candidateId,
-      coalitionId,
-      title: input.targetTitle,
-      description: input.description ?? null,
-      goalCents: input.goalCents,
-      deadline: input.deadline ?? new Date(Date.now() + 30 * 86_400_000),
-      suggestedAmounts: input.suggestedAmounts,
-    });
 
-    return { coalitionSlug, targetSlug };
+    const targets = staged.map(({ candidate, fundraisingTarget, platform }) => ({
+      candidateName: candidate.fullName,
+      targetSlug: fundraisingTarget.slug,
+      platform,
+    }));
+
+    return {
+      coalitionSlug,
+      firstTargetSlug: targets[0]!.targetSlug,
+      targets,
+    };
   },
 };
 

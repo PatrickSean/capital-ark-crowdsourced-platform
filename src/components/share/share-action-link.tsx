@@ -25,6 +25,7 @@ export function ShareActionLink({
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const canNativeShare = useNativeShareAvailable();
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(`${title}\n${url}`)}`;
 
   const share = async () => {
     if (canNativeShare) {
@@ -64,9 +65,19 @@ export function ShareActionLink({
         title="Share this drive"
         description="Anyone with this link can contribute. No account needed."
         footer={
-          <Button fullWidth size="lg" onClick={copy}>
-            {copied ? "Copied" : "Copy link"}
-          </Button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-14 items-center justify-center rounded-2xl bg-[#0f7b45] px-6 text-base font-semibold text-white transition-colors hover:bg-[#0b6b3a] active:bg-[#075a32]"
+            >
+              Share to WhatsApp
+            </a>
+            <Button fullWidth size="lg" onClick={copy}>
+              {copied ? "Copied" : "Copy link"}
+            </Button>
+          </div>
         }
       >
         <div className="space-y-4 pb-2">
@@ -81,6 +92,11 @@ export function ShareActionLink({
             Contributions made through this link are tagged with your
             coalition&rsquo;s tracking code, so the committee can see the
             support came from your group.
+          </p>
+
+          <p className="text-xs text-ink-500">
+            WhatsApp opens with a draft. You choose where it goes, review it,
+            and tap Send.
           </p>
         </div>
       </ModalSheet>
