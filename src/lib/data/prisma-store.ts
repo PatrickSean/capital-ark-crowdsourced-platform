@@ -5,7 +5,7 @@ import {
   PledgeStatus,
   TargetStatus,
 } from "@/generated/prisma/enums";
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type {
   ActivityItem,
   CandidateView,
@@ -16,6 +16,7 @@ import type {
 } from "@/lib/domain/types";
 import { computeProgress, daysUntil } from "./progress";
 import { slugify, uniqueSlug } from "./demo-store";
+import { pendingPledgeCutoff } from "@/lib/pledge-expiry";
 import type {
   ConfirmPledgeInput,
   CreateCoalitionInput,
@@ -41,6 +42,7 @@ type CandidateRow = {
   id: string;
   slug: string;
   fullName: string;
+  legalName: string | null;
   party: CandidateView["party"];
   office: string;
   state: string | null;
@@ -50,8 +52,13 @@ type CandidateRow = {
   donationUrl: string | null;
   platform: CandidateView["platform"];
   websiteUrl: string | null;
+  officialProfileUrl: string | null;
+  officialDataVerifiedAt: Date | null;
+  donationUrlVerifiedAt: Date | null;
   jurisdiction: CandidateView["jurisdiction"];
   committeeName: string | null;
+  ncsbeCommitteeId: string | null;
+  fecCandidateId: string | null;
   fecCommitteeId: string | null;
 };
 
@@ -74,6 +81,7 @@ function toCandidateView(row: CandidateRow): CandidateView {
     id: row.id,
     slug: row.slug,
     fullName: row.fullName,
+    legalName: row.legalName,
     party: row.party,
     office: row.office,
     state: row.state,
@@ -83,24 +91,37 @@ function toCandidateView(row: CandidateRow): CandidateView {
     donationUrl: row.donationUrl,
     platform: row.platform,
     websiteUrl: row.websiteUrl,
+    officialProfileUrl: row.officialProfileUrl,
+    officialDataVerifiedAt: row.officialDataVerifiedAt?.toISOString() ?? null,
+    donationUrlVerifiedAt: row.donationUrlVerifiedAt?.toISOString() ?? null,
     jurisdiction: row.jurisdiction,
     committeeName: row.committeeName,
+    ncsbeCommitteeId: row.ncsbeCommitteeId,
+    fecCandidateId: row.fecCandidateId,
     fecCommitteeId: row.fecCommitteeId,
   };
 }
 
-const targetInclude = {
-  coalition: { include: { _count: { select: { members: true } } } },
-  candidate: true,
-  pledges: {
-    select: {
-      status: true,
-      amountCents: true,
-      confirmedAmountCents: true,
-      userId: true,
+const targetInclude = (cutoff: Date): Prisma.FundraisingTargetInclude => ({
+    coalition: { include: { _count: { select: { members: true } } } },
+    candidate: true,
+    pledges: {
+      // A failed maintenance sweep must never leave stale intents visible in
+      // public totals. Resolved rows are retained; old PENDING rows are not.
+      where: {
+        OR: [
+          { status: { not: PledgeStatus.PENDING } },
+          { createdAt: { gte: cutoff } },
+        ],
+      },
+      select: {
+        status: true,
+        amountCents: true,
+        confirmedAmountCents: true,
+        userId: true,
+      },
     },
-  },
-} as const;
+  });
 
 type TargetWithRelations = {
   id: string;
@@ -203,39 +224,44 @@ export function createPrismaStore(prisma: PrismaClient): Store {
     },
 
     async listTargetsForCoalition(coalitionId) {
+      await maybeExpireStalePledges(prisma);
       const rows = await prisma.fundraisingTarget.findMany({
         where: { coalitionId, status: TargetStatus.ACTIVE },
-        include: targetInclude,
+        include: targetInclude(pendingPledgeCutoff()),
         orderBy: { createdAt: "asc" },
       });
       return rows.map((r) => toTargetView(r as unknown as TargetWithRelations));
     },
 
     async getTargetBySlug(slug) {
+      await maybeExpireStalePledges(prisma);
       const row = await prisma.fundraisingTarget.findFirst({
         where: {
           slug,
           status: TargetStatus.ACTIVE,
           coalition: { isPublic: true },
         },
-        include: targetInclude,
+        include: targetInclude(pendingPledgeCutoff()),
       });
       return row ? toTargetView(row as unknown as TargetWithRelations) : null;
     },
 
     async getTargetById(targetId) {
+      await maybeExpireStalePledges(prisma);
       const row = await prisma.fundraisingTarget.findFirst({
         where: {
           id: targetId,
           status: TargetStatus.ACTIVE,
           coalition: { isPublic: true },
         },
-        include: targetInclude,
+        include: targetInclude(pendingPledgeCutoff()),
       });
       return row ? toTargetView(row as unknown as TargetWithRelations) : null;
     },
 
     async getProgress(targetId) {
+      await maybeExpireStalePledges(prisma);
+      const cutoff = pendingPledgeCutoff();
       const target = await prisma.fundraisingTarget.findFirst({
         where: {
           id: targetId,
@@ -250,7 +276,13 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       // progress endpoint is the hottest read in the app.
       const grouped = await prisma.pledge.groupBy({
         by: ["status"],
-        where: { targetId },
+        where: {
+          targetId,
+          OR: [
+            { status: { not: PledgeStatus.PENDING } },
+            { createdAt: { gte: cutoff } },
+          ],
+        },
         _sum: { amountCents: true, confirmedAmountCents: true },
       });
 
@@ -337,66 +369,101 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       return row ? toPledgeView(row) : null;
     },
 
-    async confirmPledge(input: ConfirmPledgeInput) {
-      const existing = await prisma.pledge.findUnique({
-        where: { id: input.pledgeId },
-        include: { target: true, user: true },
+    async getPledgeConfirmationContext(pledgeId) {
+      const row = await prisma.pledge.findUnique({
+        where: { id: pledgeId },
+        include: { target: { include: { candidate: true } } },
       });
+      if (!row) return null;
 
-      if (!existing || existing.userId !== input.userId) return null;
+      return {
+        pledge: toPledgeView(row),
+        candidate: {
+          jurisdiction: row.target.candidate.jurisdiction,
+          state: row.target.candidate.state,
+        },
+      };
+    },
 
-      // Idempotent by design: tab-return detection can fire more than once,
-      // and a double-confirm must never double-count toward the goal.
-      if (existing.status !== PledgeStatus.PENDING) {
-        return toPledgeView(existing);
-      }
-
-      if (input.declined) {
-        const declined = await prisma.pledge.update({
+    async confirmPledge(input: ConfirmPledgeInput) {
+      return prisma.$transaction(async (tx) => {
+        const existing = await tx.pledge.findUnique({
           where: { id: input.pledgeId },
-          data: { status: PledgeStatus.DECLINED },
+          include: { target: true, user: true },
         });
-        return toPledgeView(declined);
-      }
 
-      const confirmedAmountCents =
-        input.confirmedAmountCents ?? existing.amountCents;
-      const status = input.receiptUrl
-        ? PledgeStatus.COMPLETED
-        : PledgeStatus.UNVERIFIED;
+        if (!existing || existing.userId !== input.userId) return null;
 
-      const [updated] = await prisma.$transaction([
-        prisma.pledge.update({
+        // A repeated request returns the first result. More importantly, the
+        // conditional update below also makes two simultaneous first requests
+        // race for one PENDING row; only the winner may write an activity event.
+        if (existing.status !== PledgeStatus.PENDING) {
+          return toPledgeView(existing);
+        }
+
+        const confirmedAmountCents =
+          input.confirmedAmountCents ?? existing.amountCents;
+        const status = input.declined
+          ? PledgeStatus.DECLINED
+          : input.receiptUrl
+            ? PledgeStatus.COMPLETED
+            : PledgeStatus.UNVERIFIED;
+
+        const claimed = await tx.pledge.updateMany({
+          where: {
+            id: input.pledgeId,
+            userId: input.userId,
+            status: PledgeStatus.PENDING,
+          },
+          data: input.declined
+            ? { status }
+            : {
+                confirmedAmountCents,
+                ocrAmountCents: input.ocrAmountCents ?? null,
+                receiptUrl: input.receiptUrl ?? null,
+                status,
+                attestedAt: new Date(),
+                attestationVersion: input.attestationVersion,
+              },
+        });
+
+        if (claimed.count === 0) {
+          const resolved = await tx.pledge.findFirst({
+            where: { id: input.pledgeId, userId: input.userId },
+          });
+          return resolved ? toPledgeView(resolved) : null;
+        }
+
+        if (!input.declined) {
+          await tx.activityEvent.create({
+            data: {
+              coalitionId: existing.target.coalitionId,
+              targetId: existing.targetId,
+              actorId: existing.userId,
+              type: ActivityType.PLEDGE_CONFIRMED,
+              actorLabel: existing.isAnonymousAtPledge
+                ? "Someone"
+                : (existing.user.displayName ?? "A supporter"),
+              amountCents: confirmedAmountCents,
+            },
+          });
+        }
+
+        const updated = await tx.pledge.findUnique({
           where: { id: input.pledgeId },
-          data: {
-            confirmedAmountCents,
-            ocrAmountCents: input.ocrAmountCents ?? null,
-            receiptUrl: input.receiptUrl ?? null,
-            status,
-            attestedAt: new Date(),
-            attestationVersion: input.attestationVersion,
-          },
-        }),
-        prisma.activityEvent.create({
-          data: {
-            coalitionId: existing.target.coalitionId,
-            targetId: existing.targetId,
-            actorId: existing.userId,
-            type: ActivityType.PLEDGE_CONFIRMED,
-            actorLabel: existing.isAnonymousAtPledge
-              ? "Someone"
-              : (existing.user.displayName ?? "A supporter"),
-            amountCents: confirmedAmountCents,
-          },
-        }),
-      ]);
-
-      return toPledgeView(updated);
+        });
+        return updated ? toPledgeView(updated) : null;
+      });
     },
 
     async listResumablePledges(userId) {
+      await maybeExpireStalePledges(prisma);
       const rows = await prisma.pledge.findMany({
-        where: { userId, status: PledgeStatus.PENDING },
+        where: {
+          userId,
+          status: PledgeStatus.PENDING,
+          createdAt: { gte: pendingPledgeCutoff() },
+        },
         include: { target: { include: { candidate: true } } },
         orderBy: { createdAt: "desc" },
         take: 5,
@@ -496,6 +563,39 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       return { coalitionSlug, targetSlug };
     },
   };
+}
+
+const EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+let lastExpirySweepAt = 0;
+let expirySweep: Promise<void> | null = null;
+
+async function maybeExpireStalePledges(prisma: PrismaClient): Promise<void> {
+  const now = Date.now();
+  if (now - lastExpirySweepAt < EXPIRY_SWEEP_INTERVAL_MS) return;
+  if (expirySweep) return expirySweep;
+
+  expirySweep = prisma.pledge
+    .updateMany({
+      where: {
+        status: PledgeStatus.PENDING,
+        createdAt: { lt: pendingPledgeCutoff(new Date(now)) },
+      },
+      data: { status: PledgeStatus.EXPIRED },
+    })
+    .then(() => {
+      lastExpirySweepAt = now;
+    })
+    .catch((error: unknown) => {
+      // Reads independently exclude stale rows, so a transient write failure
+      // cannot inflate totals. Retry on the next request rather than taking a
+      // public campaign page offline.
+      console.error("Failed to expire stale contribution intents", error);
+    })
+    .finally(() => {
+      expirySweep = null;
+    });
+
+  return expirySweep;
 }
 
 async function nextFreeSlug(

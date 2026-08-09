@@ -13,6 +13,16 @@ import { mkdir } from "node:fs/promises";
 const BASE = process.argv[2] ?? "http://localhost:3002";
 const SHOTS = "screenshots/hemp";
 
+const baseUrl = new URL(BASE);
+const isLocalBase = ["localhost", "127.0.0.1", "::1"].includes(
+  baseUrl.hostname,
+);
+if (!isLocalBase && process.env.ALLOW_PRODUCTION_MUTATIONS !== "true") {
+  throw new Error(
+    "Refusing to run against a non-local app: this legacy check creates a persistent pledge intent. Use a disposable staging database, or set ALLOW_PRODUCTION_MUTATIONS=true only for an intentional audited run.",
+  );
+}
+
 let failures = 0;
 const check = (label, ok, detail = "") => {
   console.log(`${ok ? "  PASS" : "  FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);

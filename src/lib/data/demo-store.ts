@@ -9,6 +9,7 @@ import type {
   TargetView,
 } from "@/lib/domain/types";
 import { computeProgress } from "./progress";
+import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
 import * as fixtures from "./fixtures";
 import * as ncHemp from "./campaigns/nc-hemp";
 import type {
@@ -172,6 +173,7 @@ function toCandidateView(c: fixtures.FixtureCandidate): CandidateView {
     id: c.id,
     slug: c.slug,
     fullName: c.fullName,
+    legalName: c.legalName,
     party: c.party,
     office: c.office,
     state: c.state,
@@ -181,8 +183,13 @@ function toCandidateView(c: fixtures.FixtureCandidate): CandidateView {
     donationUrl: c.donationUrl,
     platform: c.platform,
     websiteUrl: c.websiteUrl,
+    officialProfileUrl: c.officialProfileUrl,
+    officialDataVerifiedAt: c.officialDataVerifiedAt?.toISOString() ?? null,
+    donationUrlVerifiedAt: c.donationUrlVerifiedAt?.toISOString() ?? null,
     jurisdiction: c.jurisdiction,
     committeeName: c.committeeName,
+    ncsbeCommitteeId: c.ncsbeCommitteeId,
+    fecCandidateId: c.fecCandidateId,
     fecCommitteeId: c.fecCommitteeId,
   };
 }
@@ -206,6 +213,7 @@ function toCoalitionView(c: fixtures.FixtureCoalition): CoalitionView {
 }
 
 function progressFor(targetId: string): ProgressSnapshot {
+  expireDemoPledges();
   const target = state.targets.get(targetId);
   if (!target) {
     return computeProgress(0, null, []);
@@ -351,11 +359,33 @@ export const demoStore: Store = {
   },
 
   async getPledge(pledgeId) {
+    expireDemoPledges();
     const p = state.pledges.get(pledgeId);
     return p ? toPledgeView(p) : null;
   },
 
+  async getPledgeConfirmationContext(pledgeId) {
+    expireDemoPledges();
+    const pledge = state.pledges.get(pledgeId);
+    if (!pledge) return null;
+
+    const target = state.targets.get(pledge.targetId);
+    const candidate = target
+      ? state.candidates.get(target.candidateId)
+      : null;
+    if (!candidate) return null;
+
+    return {
+      pledge: toPledgeView(pledge),
+      candidate: {
+        jurisdiction: candidate.jurisdiction,
+        state: candidate.state,
+      },
+    };
+  },
+
   async confirmPledge(input: ConfirmPledgeInput) {
+    expireDemoPledges();
     const pledge = state.pledges.get(input.pledgeId);
     if (!pledge) return null;
     if (pledge.userId !== input.userId) return null;
@@ -399,6 +429,7 @@ export const demoStore: Store = {
   },
 
   async listResumablePledges(userId) {
+    expireDemoPledges();
     return [...state.pledges.values()]
       .filter((p) => p.userId === userId && p.status === PledgeStatus.PENDING)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -493,6 +524,17 @@ export const demoStore: Store = {
     return { coalitionSlug, targetSlug };
   },
 };
+
+function expireDemoPledges(now = new Date()): void {
+  for (const pledge of state.pledges.values()) {
+    if (
+      pledge.status === PledgeStatus.PENDING &&
+      isExpiredPendingPledge(pledge.createdAt, now)
+    ) {
+      pledge.status = PledgeStatus.EXPIRED;
+    }
+  }
+}
 
 function slugify(value: string): string {
   return value

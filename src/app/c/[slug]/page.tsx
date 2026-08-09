@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { isDemoMode, store } from "@/lib/data";
 import { getSessionUser } from "@/lib/auth/session";
+import { isSupabaseConfigured } from "@/lib/auth/config";
 import { absoluteUrl } from "@/lib/site";
 import { formatCentsShort } from "@/lib/money";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -29,10 +30,18 @@ export async function generateMetadata({
     description:
       coalition.description ??
       `Track ${coalition.name}'s fundraising drives on Capital Ark.`,
+    alternates: { canonical: `/c/${coalition.slug}` },
     openGraph: {
       title: coalition.name,
       description: coalition.description ?? undefined,
       url: absoluteUrl(`/c/${coalition.slug}`),
+      images: [{ url: absoluteUrl(`/c/${coalition.slug}/opengraph-image`) }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: coalition.name,
+      description: coalition.description ?? undefined,
+      images: [absoluteUrl(`/c/${coalition.slug}/opengraph-image`)],
     },
   };
 }
@@ -70,15 +79,19 @@ export default async function CoalitionPage({
       raised: acc.raised + t.progress.raisedCents,
       goal: acc.goal + t.progress.goalCents,
       verified: acc.verified + t.progress.confirmedCents,
+      attested: acc.attested + t.progress.attestedCents,
     }),
-    { raised: 0, goal: 0, verified: 0 },
+    { raised: 0, goal: 0, verified: 0, attested: 0 },
   );
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink-50">
       <SiteHeader demoMode={isDemoMode} />
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+      <main
+        id="main-content"
+        className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-10 lg:px-8"
+      >
         {resumable.length > 0 && <ResumePledgeBanner pledges={resumable} />}
 
         <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -97,6 +110,7 @@ export default async function CoalitionPage({
             <ShareActionLink
               url={absoluteUrl(`/c/${coalition.slug}`)}
               title={coalition.name}
+              label="Share this coalition"
             />
           </div>
         </header>
@@ -108,8 +122,10 @@ export default async function CoalitionPage({
           <Stat label="Raised" value={formatCentsShort(totals.raised)} emphasis />
           <Stat label="Combined goal" value={formatCentsShort(totals.goal)} />
           <Stat
-            label="With receipts"
-            value={formatCentsShort(totals.verified)}
+            label={isSupabaseConfigured ? "Receipt-backed" : "Self-reported"}
+            value={formatCentsShort(
+              isSupabaseConfigured ? totals.verified : totals.attested,
+            )}
           />
           <Stat label="Active drives" value={String(targets.length)} />
         </section>
@@ -119,8 +135,15 @@ export default async function CoalitionPage({
           candidates={targets.map((t) => t.candidate)}
         />
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-3">
-          <section aria-label="Fundraising drives" className="space-y-5 lg:col-span-2">
+        <div
+          className={`mt-8 grid gap-6 ${
+            activity.length > 0 ? "lg:grid-cols-3" : ""
+          }`}
+        >
+          <section
+            aria-label="Fundraising drives"
+            className={activity.length > 0 ? "space-y-5 lg:col-span-2" : "space-y-5"}
+          >
             <h2 className="text-sm font-bold tracking-tight text-ink-900">
               Fundraising drives
             </h2>
@@ -128,21 +151,31 @@ export default async function CoalitionPage({
             {targets.length === 0 ? (
               <Card className="p-8 text-center">
                 <p className="text-sm text-ink-600">
-                  No drives yet. Create one to start tracking contributions.
+                  No public drives are available yet.
                 </p>
               </Card>
             ) : (
-              targets.map((target) => (
-                <TargetCandidateCard key={target.id} target={target} />
-              ))
+              <div
+                className={
+                  activity.length > 0
+                    ? "space-y-5"
+                    : "grid gap-5 md:grid-cols-2"
+                }
+              >
+                {targets.map((target) => (
+                  <TargetCandidateCard key={target.id} target={target} />
+                ))}
+              </div>
             )}
           </section>
 
-          <aside className="lg:col-span-1">
-            <div className="lg:sticky lg:top-24">
-              <ActivityFeed items={activity} />
-            </div>
-          </aside>
+          {activity.length > 0 && (
+            <aside className="lg:col-span-1">
+              <div className="lg:sticky lg:top-24">
+                <ActivityFeed items={activity} />
+              </div>
+            </aside>
+          )}
         </div>
       </main>
 

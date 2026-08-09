@@ -70,13 +70,13 @@ export function WizardSuccess({
           </svg>
         </div>
 
-        <h1
+        <h2
           ref={headingRef}
           tabIndex={-1}
           className="mt-4 text-xl font-bold tracking-tight text-ink-900 outline-none sm:text-2xl"
         >
           Your drive is live
-        </h1>
+        </h2>
         <p className="mx-auto mt-2 max-w-sm text-sm text-ink-600">
           Send this link to your group. Anyone who opens it can contribute
           straight away — no account needed.

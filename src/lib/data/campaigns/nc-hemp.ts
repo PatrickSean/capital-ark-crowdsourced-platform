@@ -53,7 +53,7 @@ export const hempCoalition: FixtureCoalition = {
   slug: "nc-hemp-industry",
   name: "North Carolina Hemp Industry",
   description:
-    "Hemp growers, processors, and retailers across North Carolina backing legislators who understand the industry. Contributions are personal, made directly to each committee, and tagged HEMP so campaigns can see where they came from.",
+    "Hemp growers, processors, and retailers across North Carolina backing public officials and candidates who understand the industry. Contributions are personal, made directly to each committee, and tagged HEMP so campaigns can see where they came from.",
   logoUrl: null,
   trackingPrefix: "HEMP",
   // The whole point of this coalition's tag: every committee sees the literal

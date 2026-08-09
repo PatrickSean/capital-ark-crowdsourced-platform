@@ -16,7 +16,7 @@ const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await context.newPage();
 
-await page.goto(`${BASE}/t/webb-senate-push`, { waitUntil: "networkidle" });
+await page.goto(`${BASE}/t/hemp-destin-hall`, { waitUntil: "networkidle" });
 
 // --- Landmarks and headings -------------------------------------------------
 check("page has exactly one <h1>", (await page.locator("h1").count()) === 1);
@@ -27,6 +27,10 @@ check(
     await page.locator('[role="progressbar"]').first().getAttribute("aria-valuetext"),
   ),
 );
+check(
+  "progress bar has an accessible name",
+  Boolean(await page.locator('[role="progressbar"]').first().getAttribute("aria-label")),
+);
 
 // --- Open the modal by keyboard only ---------------------------------------
 await page.keyboard.press("Tab");
@@ -35,7 +39,7 @@ for (let i = 0; i < 25 && !opened; i++) {
   const label = await page.evaluate(
     () => document.activeElement?.textContent?.trim() ?? "",
   );
-  if (/Contribute & track/i.test(label)) {
+  if (/Contribute to Destin Hall/i.test(label)) {
     await page.keyboard.press("Enter");
     opened = await page
       .waitForSelector('[role="dialog"]', { timeout: 3000 })
@@ -71,6 +75,17 @@ if (opened) {
   );
   check("background scroll is locked", bodyLocked);
 
+  const backgroundIsInert = await page.evaluate(() =>
+    [...document.body.children]
+      .filter((element) => !element.querySelector('[role="dialog"]'))
+      .every(
+        (element) =>
+          element.hasAttribute("inert") &&
+          element.getAttribute("aria-hidden") === "true",
+      ),
+  );
+  check("background is hidden from assistive technology", backgroundIsInert);
+
   // Tab many times; focus must never escape the dialog.
   let escaped = false;
   for (let i = 0; i < 40; i++) {
@@ -99,7 +114,7 @@ if (opened) {
   );
   check(
     "focus returns to the trigger on close",
-    /Contribute & track/i.test(restored),
+    /Contribute to Destin Hall/i.test(restored),
     restored,
   );
 
@@ -112,7 +127,7 @@ if (opened) {
 // --- Reduced motion ---------------------------------------------------------
 const reduced = await browser.newContext({ reducedMotion: "reduce" });
 const rp = await reduced.newPage();
-await rp.goto(`${BASE}/t/webb-senate-push`, { waitUntil: "networkidle" });
+await rp.goto(`${BASE}/t/hemp-destin-hall`, { waitUntil: "networkidle" });
 const animDuration = await rp.evaluate(() => {
   const el = document.querySelector('[role="progressbar"] div div');
   return el ? getComputedStyle(el).transitionDuration : null;

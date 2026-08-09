@@ -23,11 +23,13 @@ export function LayeredProgressBar({
   progress,
   size = "md",
   showLegend = true,
+  ariaLabel = "Fundraising progress",
   className,
 }: {
   progress: ProgressSnapshot;
   size?: "sm" | "md";
   showLegend?: boolean;
+  ariaLabel?: string;
   className?: string;
 }) {
   const { goalCents, confirmedCents, attestedCents, pendingCents, raisedCents } =
@@ -67,6 +69,7 @@ export function LayeredProgressBar({
           height,
         )}
         role="progressbar"
+        aria-label={ariaLabel}
         aria-valuemin={0}
         aria-valuemax={goalCents / 100}
         aria-valuenow={raisedCents / 100}

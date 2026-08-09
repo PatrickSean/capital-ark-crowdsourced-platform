@@ -19,6 +19,16 @@ const args = process.argv.slice(2);
 const LIVE = args.includes("--live");
 const BASE = args.find((a) => !a.startsWith("--")) ?? "http://localhost:3002";
 
+const baseUrl = new URL(BASE);
+const isLocalBase = ["localhost", "127.0.0.1", "::1"].includes(
+  baseUrl.hostname,
+);
+if (!isLocalBase && process.env.ALLOW_PRODUCTION_MUTATIONS !== "true") {
+  throw new Error(
+    "Refusing to run against a non-local app: this check creates persistent pledge intents. Use a disposable staging database, or set ALLOW_PRODUCTION_MUTATIONS=true only for an intentional audited run.",
+  );
+}
+
 /** The parameter each processor reads a source code from. */
 const TAG_PARAM = {
   "secure.winred.com": "sc",

@@ -9,6 +9,7 @@ import {
   detectPlatform,
   sanitizeTrackingTag,
 } from "@/lib/tracking/link-builder";
+import { isDriveCreationEnabled } from "@/lib/auth/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,14 @@ const BodySchema = z.object({
  * exist, and returns the shareable link the organizer actually came for.
  */
 export async function POST(request: Request) {
+  if (!isDriveCreationEnabled) {
+    return jsonError(
+      403,
+      "drive_creation_review_required",
+      "New drives are reviewed before publication during the curated launch.",
+    );
+  }
+
   const { data: body, error } = await parseBody(request, BodySchema);
   if (error) return error;
 

@@ -12,8 +12,9 @@
   --color-ink-100: oklch(0.967 0.003 250);
   --color-ink-200: oklch(0.925 0.006 250);
   --color-ink-300: oklch(0.865 0.009 250);
-  --color-ink-400: oklch(0.705 0.014 250);
-  --color-ink-500: oklch(0.565 0.017 250);
+  /* Muted text still clears WCAG AA contrast on white surfaces. */
+  --color-ink-400: oklch(0.56 0.014 250);
+  --color-ink-500: oklch(0.5 0.017 250);
   --color-ink-600: oklch(0.45 0.017 250);
   --color-ink-700: oklch(0.37 0.016 250);
   --color-ink-800: oklch(0.27 0.015 250);

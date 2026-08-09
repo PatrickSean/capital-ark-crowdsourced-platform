@@ -143,7 +143,7 @@ export default async function OgImage({
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 26, color: "#64748b" }}>
-            <div>{`${progress.donorCount} contributors`}</div>
+            <div>{`${progress.donorCount} ${progress.donorCount === 1 ? "contributor" : "contributors"}`}</div>
             <div>
               {progress.daysRemaining !== null
                 ? `${progress.daysRemaining} days left`

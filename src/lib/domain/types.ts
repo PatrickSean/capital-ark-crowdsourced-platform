@@ -29,6 +29,7 @@ export interface CandidateView {
   id: string;
   slug: string;
   fullName: string;
+  legalName: string | null;
   party: Party;
   office: string;
   state: string | null;
@@ -40,8 +41,13 @@ export interface CandidateView {
   platform: Platform | null;
   /** Public campaign site, shown only as a lead for finding the real link. */
   websiteUrl: string | null;
+  officialProfileUrl: string | null;
+  officialDataVerifiedAt: string | null;
+  donationUrlVerifiedAt: string | null;
   jurisdiction: Jurisdiction;
   committeeName: string | null;
+  ncsbeCommitteeId: string | null;
+  fecCandidateId: string | null;
   fecCommitteeId: string | null;
 }
 

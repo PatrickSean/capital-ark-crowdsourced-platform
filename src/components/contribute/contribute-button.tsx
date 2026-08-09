@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatCentsShort } from "@/lib/money";
 import { describeReferenceLink } from "@/lib/reference-link";
 import type { ProgressSnapshot, TargetView } from "@/lib/domain/types";
 import { ContributeFlowModal } from "./contribute-flow-modal";
@@ -51,16 +50,10 @@ export function ContributeButton({
     );
   }
 
-  const suggested =
-    initialAmountCents ??
-    target.suggestedAmounts[1] ??
-    target.suggestedAmounts[0] ??
-    5000;
-
   return (
     <>
       <Button size={size} fullWidth onClick={() => setOpen(true)}>
-        {label ?? `Contribute & track ${formatCentsShort(suggested)}`}
+        {label ?? `Contribute to ${fullName}`}
       </Button>
 
       <ContributeFlowModal

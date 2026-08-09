@@ -47,6 +47,25 @@ export function ModalSheet({
 
     previouslyFocused.current = document.activeElement as HTMLElement | null;
 
+    // The portal is a sibling of the application root. Make every other body
+    // child inert while the dialog is open so screen-reader browse mode and
+    // pointer/keyboard navigation cannot wander into the page behind it.
+    const portalRoot = panelRef.current?.parentElement ?? null;
+    const background = [...document.body.children]
+      .filter((element): element is HTMLElement =>
+        element instanceof HTMLElement && element !== portalRoot,
+      )
+      .map((element) => ({
+        element,
+        inert: element.inert,
+        ariaHidden: element.getAttribute("aria-hidden"),
+      }));
+
+    for (const { element } of background) {
+      element.inert = true;
+      element.setAttribute("aria-hidden", "true");
+    }
+
     // Lock the background without the layout shift that removing the
     // scrollbar would otherwise cause.
     const { overflow, paddingRight } = document.body.style;
@@ -107,6 +126,11 @@ export function ModalSheet({
       document.removeEventListener("keydown", onKeyDown, true);
       document.body.style.overflow = overflow;
       document.body.style.paddingRight = paddingRight;
+      for (const { element, inert, ariaHidden } of background) {
+        element.inert = inert;
+        if (ariaHidden === null) element.removeAttribute("aria-hidden");
+        else element.setAttribute("aria-hidden", ariaHidden);
+      }
       previouslyFocused.current?.focus?.();
     };
   }, [open, handleClose]);
@@ -135,13 +159,7 @@ export function ModalSheet({
           "sm:max-w-md sm:animate-rise sm:rounded-3xl",
         )}
       >
-        {/* Grab handle: the affordance that tells a mobile user this is
-            dismissible by dragging, matching platform convention. */}
-        <div className="flex shrink-0 justify-center pt-3 sm:hidden">
-          <div className="h-1.5 w-10 rounded-full bg-ink-300" aria-hidden="true" />
-        </div>
-
-        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-4 pb-2 sm:pt-6">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5 pb-2 sm:pt-6">
           <div className="min-w-0">
             <h2 className="text-lg font-bold tracking-tight text-ink-900">
               {title}

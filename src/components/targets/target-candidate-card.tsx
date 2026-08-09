@@ -16,14 +16,15 @@ export function TargetCandidateCard({ target }: { target: TargetView }) {
   const { candidate, progress } = target;
 
   return (
-    <Card className="flex flex-col gap-5 p-5">
+    <Card className="flex h-full flex-col gap-5 p-5">
       <div className="flex items-start gap-4">
         <Avatar name={candidate.fullName} photoUrl={candidate.photoUrl} />
 
         <div className="min-w-0 flex-1">
           <Link
             href={`/t/${target.slug}`}
-            className="text-lg font-bold tracking-tight text-ink-900 hover:text-brand-800"
+            aria-label={`View the fundraising drive for ${candidate.fullName}`}
+            className="tap-target inline-flex items-center text-lg font-bold tracking-tight text-ink-900 hover:text-brand-800"
           >
             {candidate.fullName}
           </Link>
@@ -42,7 +43,8 @@ export function TargetCandidateCard({ target }: { target: TargetView }) {
                 href={candidate.websiteUrl}
                 target="_blank"
                 rel="noopener noreferrer nofollow"
-                className="text-xs font-medium text-ink-500 underline underline-offset-2 hover:text-ink-800"
+                aria-label={`Visit ${candidate.fullName}’s campaign site (opens in a new tab)`}
+                className="tap-target inline-flex items-center text-xs font-medium text-ink-600 underline underline-offset-2 hover:text-ink-900"
               >
                 Campaign site
               </a>
@@ -57,7 +59,10 @@ export function TargetCandidateCard({ target }: { target: TargetView }) {
         </p>
       )}
 
-      <LayeredProgressBar progress={progress} />
+      <LayeredProgressBar
+        progress={progress}
+        ariaLabel={`Fundraising progress for ${candidate.fullName}`}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-600">
         <span>
@@ -67,7 +72,9 @@ export function TargetCandidateCard({ target }: { target: TargetView }) {
         <DeadlinePill daysRemaining={progress.daysRemaining} />
       </div>
 
-      <ContributeButton target={target} compactPendingState />
+      <div className="mt-auto">
+        <ContributeButton target={target} compactPendingState />
+      </div>
     </Card>
   );
 }

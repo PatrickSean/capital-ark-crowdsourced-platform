@@ -33,6 +33,19 @@ export const TURNSTILE_SITE_KEY =
   process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
 /**
+ * Public drive creation is deliberately opt-in in production.
+ *
+ * The first NC launch is curated: publishing a political fundraising page
+ * needs a verified organizer and a reviewed candidate/committee pairing.
+ * Local development keeps the wizard available so the complete product can
+ * still be exercised without extra configuration.
+ */
+export const isDriveCreationEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_DRIVE_CREATION === "true" ||
+  (process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_ENABLE_DRIVE_CREATION !== "false");
+
+/**
  * Cookie holding the demo-mode identity.
  *
  * Demo mode still needs a stable per-visitor id so pledges, the resume banner

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, Field, Input } from "@/components/ui/primitives";
-import { Party } from "@/generated/prisma/enums";
+import { Jurisdiction, Party } from "@/generated/prisma/enums";
 import {
   derivePrefix,
   detectPlatform,
@@ -43,8 +43,9 @@ export function CoalitionWizard() {
   const [description, setDescription] = useState("");
   const [candidateName, setCandidateName] = useState("");
   const [office, setOffice] = useState("");
-  const [party, setParty] = useState<Party>(Party.INDEPENDENT);
-  const [stateCode, setStateCode] = useState("");
+  const [party, setParty] = useState<Party | "">("");
+  const [jurisdiction, setJurisdiction] = useState<Jurisdiction | "">("");
+  const [stateCode, setStateCode] = useState("NC");
   const [donationUrl, setDonationUrl] = useState("");
   const [goalText, setGoalText] = useState("");
   const [deadline, setDeadline] = useState("");
@@ -77,6 +78,9 @@ export function CoalitionWizard() {
     coalitionName.trim().length >= 2 &&
     candidateName.trim().length >= 2 &&
     office.trim().length >= 2 &&
+    party !== "" &&
+    jurisdiction !== "" &&
+    stateCode.trim().length === 2 &&
     platform !== null &&
     goalCents !== null &&
     !busy;
@@ -93,7 +97,7 @@ export function CoalitionWizard() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canSubmit || goalCents === null) return;
+    if (!canSubmit) return;
 
     setBusy(true);
     setError(null);
@@ -111,6 +115,7 @@ export function CoalitionWizard() {
           candidateName: candidateName.trim(),
           office: office.trim(),
           party,
+          jurisdiction,
           state: stateCode.trim().toUpperCase() || null,
           donationUrl: donationUrl.trim(),
           goalCents,
@@ -163,9 +168,11 @@ export function CoalitionWizard() {
         >
           <Input
             id="donation-url"
+            type="url"
+            required
             inputMode="url"
             autoComplete="off"
-            placeholder="secure.winred.com/example/donate"
+            placeholder="Paste the official donation-page URL"
             value={donationUrl}
             invalid={urlTouched && !platform}
             onChange={(e) => setDonationUrl(e.target.value)}
@@ -192,7 +199,8 @@ export function CoalitionWizard() {
           <Field label="Candidate name" htmlFor="candidate-name">
             <Input
               id="candidate-name"
-              placeholder="Marcus Webb"
+              required
+              placeholder="Candidate’s full name"
               value={candidateName}
               onChange={(e) => setCandidateName(e.target.value)}
             />
@@ -201,7 +209,8 @@ export function CoalitionWizard() {
           <Field label="Office sought" htmlFor="office">
             <Input
               id="office"
-              placeholder="U.S. Senate"
+              required
+              placeholder="e.g. NC House — District 87"
               value={office}
               onChange={(e) => setOffice(e.target.value)}
             />
@@ -212,10 +221,14 @@ export function CoalitionWizard() {
           <Field label="Party" htmlFor="party">
             <select
               id="party"
+              required
               value={party}
-              onChange={(e) => setParty(e.target.value as Party)}
+              onChange={(e) => setParty(e.target.value as Party | "")}
               className="h-12 w-full rounded-xl bg-white px-3.5 text-base text-ink-900 shadow-sm ring-1 ring-ink-200 ring-inset focus:ring-2 focus:ring-brand-600 focus:outline-none"
             >
+              <option value="" disabled>
+                Select a party
+              </option>
               {PARTY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -227,6 +240,7 @@ export function CoalitionWizard() {
           <Field label="State" htmlFor="state" hint="Two-letter abbreviation.">
             <Input
               id="state"
+              required
               maxLength={2}
               placeholder="NC"
               value={stateCode}
@@ -235,6 +249,26 @@ export function CoalitionWizard() {
             />
           </Field>
         </div>
+
+        <Field label="Election level" htmlFor="jurisdiction">
+          <select
+            id="jurisdiction"
+            required
+            value={jurisdiction}
+            onChange={(e) =>
+              setJurisdiction(e.target.value as Jurisdiction | "")
+            }
+            className="h-12 w-full rounded-xl bg-white px-3.5 text-base text-ink-900 shadow-sm ring-1 ring-ink-200 ring-inset focus:ring-2 focus:ring-brand-600 focus:outline-none"
+          >
+            <option value="" disabled>
+              Select election level
+            </option>
+            <option value={Jurisdiction.STATE}>
+              North Carolina state or local
+            </option>
+            <option value={Jurisdiction.FEDERAL}>Federal</option>
+          </select>
+        </Field>
       </Card>
 
       <Card className="space-y-5 p-5 sm:p-6">
@@ -247,7 +281,8 @@ export function CoalitionWizard() {
         <Field label="Group name" htmlFor="coalition-name">
           <Input
             id="coalition-name"
-            placeholder="NC Small Business Coalition"
+            required
+            placeholder="Your group or coalition name"
             value={coalitionName}
             onChange={(e) => setCoalitionName(e.target.value)}
           />
@@ -264,7 +299,7 @@ export function CoalitionWizard() {
             maxLength={500}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Independent business owners backing candidates who show up for Main Street."
+            placeholder="Describe who is organizing this drive and why."
             className="w-full rounded-xl bg-white px-3.5 py-3 text-base text-ink-900 shadow-sm ring-1 ring-ink-200 ring-inset placeholder:text-ink-400 focus:ring-2 focus:ring-brand-600 focus:outline-none"
           />
         </Field>
@@ -281,6 +316,7 @@ export function CoalitionWizard() {
               </span>
               <Input
                 id="goal"
+                required
                 inputMode="decimal"
                 placeholder="25,000"
                 className="pl-8"
@@ -306,7 +342,7 @@ export function CoalitionWizard() {
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
             aria-expanded={showAdvanced}
-            className="text-xs font-semibold text-ink-500 underline underline-offset-2 hover:text-ink-800"
+            className="tap-target inline-flex items-center text-xs font-semibold text-ink-600 underline underline-offset-2 hover:text-ink-900"
           >
             {showAdvanced ? "Hide" : "Show"} tracking code settings
           </button>
@@ -321,7 +357,7 @@ export function CoalitionWizard() {
                 <Input
                   id="prefix"
                   value={customPrefix}
-                  placeholder={prefix || "NCSBC"}
+                  placeholder={prefix || "GROUP"}
                   onChange={(e) => setCustomPrefix(e.target.value)}
                   className="font-mono uppercase"
                 />
@@ -342,22 +378,20 @@ export function CoalitionWizard() {
         </div>
       )}
 
-      {/* Sticky so the submit is always reachable on a long mobile form. The
-          fade above it keeps scrolled content from looking abruptly clipped. */}
-      <div className="sticky bottom-0 -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none h-6 bg-gradient-to-t from-ink-50 to-transparent"
-        />
-        <div className="bg-ink-50 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Button type="submit" size="lg" fullWidth loading={busy} disabled={!canSubmit}>
-            Create drive and get my link
-          </Button>
-          <p className="mt-2 text-center text-xs text-ink-500">
-            Listing a candidate isn&rsquo;t an endorsement, and Capital Ark
-            never handles contributions.
-          </p>
-        </div>
+      <div className="pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <Button
+          type="submit"
+          size="lg"
+          fullWidth
+          loading={busy}
+          disabled={!canSubmit}
+        >
+          Create drive and get my link
+        </Button>
+        <p className="mt-2 text-center text-xs text-ink-500">
+          Listing a candidate isn&rsquo;t an endorsement, and Capital Ark never
+          handles contributions.
+        </p>
       </div>
     </form>
   );

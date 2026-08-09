@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { absoluteUrl } from "@/lib/site";
 import { formatCentsShort, parseAmountToCents } from "@/lib/money";
 import { PLATFORM_LABELS } from "@/lib/tracking/link-builder";
+import { isExpiredPendingPledge } from "@/lib/pledge-expiry";
 import { SiteHeader } from "@/components/layout/site-header";
 import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
 import { SourceOfFundsNotice } from "@/components/compliance/source-of-funds-notice";
@@ -38,13 +39,19 @@ export async function generateMetadata({
   return {
     title: target.title,
     description,
+    alternates: { canonical: `/t/${target.slug}` },
     openGraph: {
       title: target.title,
       description,
       url: absoluteUrl(`/t/${target.slug}`),
       images: [{ url: absoluteUrl(`/t/${target.slug}/opengraph-image`) }],
     },
-    twitter: { card: "summary_large_image", title: target.title, description },
+    twitter: {
+      card: "summary_large_image",
+      title: target.title,
+      description,
+      images: [absoluteUrl(`/t/${target.slug}/opengraph-image`)],
+    },
   };
 }
 
@@ -72,12 +79,20 @@ export default async function TargetPage({
   // Only honour ?resume= for a pledge the current visitor actually owns, so a
   // shared URL can't drop someone into a stranger's pledge.
   let resumePledgeId: string | null = null;
+  let resumeAmountCents: number | null = null;
   if (query.resume) {
     const user = await getSessionUser();
     if (user) {
       const pledge = await store.getPledge(query.resume);
-      if (pledge && pledge.userId === user.id && pledge.status === "PENDING") {
+      if (
+        pledge &&
+        pledge.userId === user.id &&
+        pledge.targetId === target.id &&
+        pledge.status === "PENDING" &&
+        !isExpiredPendingPledge(pledge.createdAt)
+      ) {
         resumePledgeId = pledge.id;
+        resumeAmountCents = pledge.amountCents;
       }
     }
   }
@@ -88,7 +103,7 @@ export default async function TargetPage({
     <div className="flex min-h-dvh flex-col bg-ink-50">
       <SiteHeader demoMode={isDemoMode} />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
+      <main id="main-content" className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         <Link
           href={`/c/${coalition.slug}`}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-600 hover:text-ink-900"
@@ -124,12 +139,51 @@ export default async function TargetPage({
                       href={candidate.websiteUrl}
                       target="_blank"
                       rel="noopener noreferrer nofollow"
-                      className="text-xs font-medium text-ink-500 underline underline-offset-2 hover:text-ink-800"
+                      aria-label={`Open ${candidate.fullName}'s campaign site`}
+                      className="tap-target inline-flex items-center text-xs font-medium text-ink-500 underline underline-offset-2 hover:text-ink-800"
                     >
                       Campaign site
                     </a>
                   )}
                 </div>
+                {(candidate.officialDataVerifiedAt ||
+                  candidate.donationUrlVerifiedAt) && (
+                  <p className="mt-3 text-xs leading-relaxed text-ink-500">
+                    {candidate.officialDataVerifiedAt &&
+                    candidate.donationUrlVerifiedAt
+                      ? "Candidate details and donation link checked"
+                      : candidate.officialDataVerifiedAt
+                        ? "Candidate details checked"
+                        : "Donation link checked"}{" "}
+                    {formatVerificationDate(
+                      candidate.donationUrlVerifiedAt ??
+                        candidate.officialDataVerifiedAt,
+                    )}
+                    {candidate.officialProfileUrl && (
+                      <>
+                        {" · "}
+                        <a
+                          href={candidate.officialProfileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer nofollow"
+                          className="font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-900"
+                          aria-label={`Open the official government profile for ${candidate.fullName}`}
+                        >
+                          Official profile
+                        </a>
+                      </>
+                    )}
+                    {(candidate.ncsbeCommitteeId ||
+                      candidate.fecCommitteeId) && (
+                      <>
+                        {" · "}
+                        {candidate.ncsbeCommitteeId
+                          ? `NCSBE ${candidate.ncsbeCommitteeId}`
+                          : `FEC ${candidate.fecCommitteeId}`}
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -151,7 +205,10 @@ export default async function TargetPage({
             )}
 
             <div className="mt-5">
-              <LayeredProgressBar progress={progress} />
+              <LayeredProgressBar
+                progress={progress}
+                ariaLabel={`Fundraising progress for ${candidate.fullName}`}
+              />
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-ink-600">
@@ -171,7 +228,7 @@ export default async function TargetPage({
             <ContributeButton
               target={target}
               autoOpen={requestedAmount !== null || resumePledgeId !== null}
-              initialAmountCents={requestedAmount}
+              initialAmountCents={resumeAmountCents ?? requestedAmount}
               resumePledgeId={resumePledgeId}
             />
             {candidate.platform && (
@@ -199,4 +256,17 @@ export default async function TargetPage({
       <DisclaimerFooter />
     </div>
   );
+}
+
+function formatVerificationDate(value: string | null): string {
+  if (!value) return "recently";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "recently";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }

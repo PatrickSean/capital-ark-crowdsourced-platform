@@ -141,11 +141,17 @@ the same DigitalOcean region. Configure:
 - build command: `npm run build`
 - run command: `npm start`
 - pre-deploy job: `npm run db:deploy`
+- scheduled job: `npm run db:expire-pending` on `0 * * * *` (hourly)
 - HTTP route: `/`
 - health check: `/api/health`
 - app variables: `DATABASE_URL`, `DATABASE_CA_CERT`,
-  `NEXT_PUBLIC_AUTH_MODE=local`, `NEXT_PUBLIC_SITE_URL=${APP_URL}`, and a
-  random encrypted `IP_HASH_SALT`
+  `NEXT_PUBLIC_AUTH_MODE=local`, `NEXT_PUBLIC_ENABLE_DRIVE_CREATION=false`,
+  `NEXT_PUBLIC_SITE_URL=${APP_URL}`, `SEED_DEMO_DATA=false`, and a random
+  encrypted `IP_HASH_SALT`
+
+Set every `NEXT_PUBLIC_*` variable to build-and-runtime scope. Next.js embeds
+these values in the browser bundle during the build; runtime-only values will
+not update the deployed interface.
 
 For DigitalOcean Managed PostgreSQL, bind `DATABASE_CA_CERT` to the database
 component's `${<database-component>.CA_CERT}` value. The Prisma runtime and
@@ -162,17 +168,24 @@ shared store. App Platform supplies `PORT`; Next.js binds to it automatically.
 | `npm run dev`                 | Dev server                                            |
 | `npm run build`               | Production build                                      |
 | `npm test`                    | Unit tests (link builder, OCR parsing)                |
+| `npm run test:a11y`           | Keyboard, modal, and WCAG AA browser checks           |
 | `npm run typecheck`           | `tsc --noEmit`                                        |
 | `npm run db:migrate`          | Apply Prisma migrations                               |
 | `npm run db:migrate:deploy`   | Apply committed migrations in production              |
 | `npm run db:seed`             | Upsert the audited NC slate                           |
 | `npm run db:deploy`           | Apply production migrations, then upsert the NC slate |
+| `npm run db:expire-pending`   | Expire unresolved intents older than 72 hours         |
 | `node scripts/walk-flow.mjs`  | Walks the whole contributor journey in a real browser |
 | `node scripts/a11y-check.mjs` | Keyboard, focus trap, and reduced-motion checks       |
 | `node scripts/screenshot.mjs` | Captures mobile and desktop screenshots               |
 
 The browser scripts need a server running (`npx next start -p 3210`) and
 Playwright's Chromium (`npx playwright install chromium`).
+
+`check-hemp-links.mjs` and the legacy `verify-hemp.mjs` call the contribution
+link API and therefore create pledge-intent rows. They refuse non-local app
+URLs by default; use them only with a disposable staging database for a
+deliberate end-to-end processor check.
 
 ## What this platform is not
 

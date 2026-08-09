@@ -14,12 +14,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:a11y": "node scripts/a11y-check.mjs && node scripts/axe-audit.mjs",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:deploy": "prisma migrate deploy && tsx prisma/seed.ts",
+    "db:expire-pending": "tsx scripts/expire-pending.ts",
     "db:reset": "prisma migrate reset --force"
   },
   "prisma": {
@@ -48,6 +50,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "axe-core": "^4.13.0",
     "eslint": "^9.20.0",
     "eslint-config-next": "^16.3.0",
     "playwright": "^1.62.1",

@@ -190,6 +190,9 @@ export function openPlaceholderWindow(message = "Opening secure donation page…
 </style></head>
 <body><div><div class="s"></div>${message}</div></body></html>`);
   popup.document.close();
+  // The parent retains its WindowProxy for navigation and close detection,
+  // while the untrusted processor page cannot navigate the Capital Ark tab.
+  popup.opener = null;
 
   return popup;
 }

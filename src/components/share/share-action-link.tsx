@@ -73,7 +73,7 @@ export function ShareActionLink({
           <QrCode value={url} />
 
           <div className="rounded-xl bg-ink-50 p-3 ring-1 ring-inset ring-ink-200">
-            <p className="text-xs font-medium text-ink-500">Link</p>
+            <p className="text-xs font-medium text-ink-600">Link</p>
             <p className="mt-1 break-all font-mono text-xs text-ink-800">{url}</p>
           </div>
 

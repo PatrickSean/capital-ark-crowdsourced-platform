@@ -193,7 +193,10 @@ with (security_invoker = off) as
     t.goal_cents,
     coalesce(sum(p.confirmed_amount_cents) filter (where p.status = 'COMPLETED'),  0)::bigint as confirmed_cents,
     coalesce(sum(p.confirmed_amount_cents) filter (where p.status = 'UNVERIFIED'), 0)::bigint as attested_cents,
-    coalesce(sum(p.amount_cents)           filter (where p.status = 'PENDING'),    0)::bigint as pending_cents,
+    coalesce(sum(p.amount_cents)           filter (
+      where p.status = 'PENDING'
+        and p.created_at >= now() - interval '72 hours'
+    ), 0)::bigint as pending_cents,
     count(distinct p.user_id) filter (where p.status in ('COMPLETED', 'UNVERIFIED'))          as donor_count
   from public.fundraising_targets t
   left join public.pledges p on p.target_id = t.id
@@ -202,9 +205,24 @@ with (security_invoker = off) as
 grant select on public.target_progress to anon, authenticated;
 
 -- Receipts bucket: private, owner-scoped, served only via signed URLs.
-insert into storage.buckets (id, name, public)
-values ('receipts', 'receipts', false)
-on conflict (id) do nothing;
+insert into storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+values (
+  'receipts',
+  'receipts',
+  false,
+  10485760,
+  array['image/png', 'image/jpeg', 'image/webp', 'image/heic']::text[]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 create policy "users upload their own receipts"
   on storage.objects for insert

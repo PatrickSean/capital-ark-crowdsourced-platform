@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PLATFORM_DISCLAIMER } from "@/lib/compliance/attestations";
+import { isDriveCreationEnabled } from "@/lib/auth/config";
 
 export function DisclaimerFooter() {
   return (
@@ -13,27 +14,51 @@ export function DisclaimerFooter() {
             </p>
           </div>
 
-          <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-            <Link href="/" className="text-ink-600 hover:text-ink-900">
+          <nav
+            aria-label="Footer"
+            className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"
+          >
+            <Link
+              href="/"
+              className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
+            >
               Home
             </Link>
-            <Link href="/start" className="text-ink-600 hover:text-ink-900">
-              Start a drive
+            <Link
+              href={
+                isDriveCreationEnabled ? "/start" : "/c/nc-hemp-industry"
+              }
+              className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
+            >
+              {isDriveCreationEnabled ? "Start a drive" : "NC hemp drive"}
             </Link>
-            <Link href="/compliance" className="text-ink-600 hover:text-ink-900">
+            <Link
+              href="/compliance"
+              className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
+            >
               Compliance
+            </Link>
+            <Link
+              href="/privacy"
+              className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
+            >
+              Privacy
+            </Link>
+            <Link
+              href="/terms"
+              className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
+            >
+              Terms
             </Link>
           </nav>
         </div>
 
         <div className="mt-8 border-t border-ink-100 pt-6">
-          <ul className="space-y-2.5">
-            {PLATFORM_DISCLAIMER.full.map((clause) => (
-              <li key={clause} className="text-xs leading-relaxed text-ink-500">
-                {clause}
-              </li>
-            ))}
-          </ul>
+          <p className="max-w-4xl text-xs leading-relaxed text-ink-500">
+            Progress is crowdsourced from contributors and is not an official
+            campaign total. Eligibility and contribution limits are determined
+            by law and reviewed by the recipient committee.
+          </p>
         </div>
       </div>
     </footer>

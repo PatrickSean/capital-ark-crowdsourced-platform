@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/primitives";
@@ -32,6 +32,7 @@ import { ClaimAccountCard } from "@/components/account/claim-account-card";
  * out that doesn't strand them.
  */
 type Step = "amount" | "waiting" | "confirm" | "done";
+type ReceiptOutcome = "not-requested" | "stored" | "failed";
 
 export function ContributeFlowModal({
   target,
@@ -50,7 +51,6 @@ export function ContributeFlowModal({
   onProgressChange?: (progress: ProgressSnapshot) => void;
 }) {
   const router = useRouter();
-  const titleId = useId();
   const { ensureIdentity } = useIdentity();
 
   // Which clauses the contributor sees, and which version we record against
@@ -74,6 +74,14 @@ export function ContributeFlowModal({
   const [confirmedText, setConfirmedText] = useState("");
   const [editingAmount, setEditingAmount] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptResult | null>(null);
+  const [uploadedReceiptKey, setUploadedReceiptKey] = useState<string | null>(
+    null,
+  );
+  const [receiptOutcome, setReceiptOutcome] =
+    useState<ReceiptOutcome>("not-requested");
+  const [recordedAmountCents, setRecordedAmountCents] = useState<number | null>(
+    null,
+  );
   const [attested, setAttested] = useState(false);
   const [attestError, setAttestError] = useState<string | null>(null);
 
@@ -99,6 +107,9 @@ export function ContributeFlowModal({
       setPledgeId(resumePledgeId ?? null);
       setOutboundUrl(null);
       setReceipt(null);
+      setUploadedReceiptKey(null);
+      setReceiptOutcome("not-requested");
+      setRecordedAmountCents(null);
       setAttested(false);
       setAttestError(null);
       setError(null);
@@ -111,11 +122,8 @@ export function ContributeFlowModal({
 
   const effectiveConfirmedCents = useCallback(() => {
     if (editingAmount) return parseAmountToCents(confirmedText);
-    if (receipt?.ocrAmountCents && receipt.ocrConfidence >= 0.6) {
-      return receipt.ocrAmountCents;
-    }
     return amountCents;
-  }, [editingAmount, confirmedText, receipt, amountCents]);
+  }, [editingAmount, confirmedText, amountCents]);
 
   /**
    * Step 1 -> 2. The popup is claimed synchronously here, before any await,
@@ -193,9 +201,10 @@ export function ContributeFlowModal({
       setAttestError(null);
 
       try {
-        let receiptUrl: string | null = null;
-        if (!declined && receipt) {
+        let receiptUrl = declined ? null : uploadedReceiptKey;
+        if (!declined && receipt && !receiptUrl) {
           receiptUrl = await uploadReceipt(pledgeId, receipt);
+          if (receiptUrl) setUploadedReceiptKey(receiptUrl);
         }
 
         const confirmed = declined ? null : effectiveConfirmedCents();
@@ -240,11 +249,18 @@ export function ContributeFlowModal({
           return;
         }
 
+        const storedReceipt = Boolean(payload?.pledge?.receiptUrl);
+        setReceiptOutcome(
+          storedReceipt ? "stored" : receipt ? "failed" : "not-requested",
+        );
+        setRecordedAmountCents(
+          payload?.pledge?.confirmedAmountCents ?? confirmed ?? amountCents,
+        );
         setStep("done");
         router.refresh();
       } catch {
         setError(
-          "We couldn't reach the server. Your contribution still counted — try confirming again.",
+          "Your contribution may have gone through on the committee's site, but we couldn't update this tracker. Please try confirming again.",
         );
       } finally {
         setBusy(false);
@@ -255,7 +271,9 @@ export function ContributeFlowModal({
       attested,
       attestationVersion,
       receipt,
+      uploadedReceiptKey,
       effectiveConfirmedCents,
+      amountCents,
       onProgressChange,
       onClose,
       router,
@@ -269,14 +287,12 @@ export function ContributeFlowModal({
       open={open}
       onClose={onClose}
       title={stepTitle(step, target)}
-      labelledBy={titleId}
       dismissible={!busy}
       footer={
         <ModalFooter
           step={step}
           busy={busy}
           amountCents={amountCents}
-          attested={attested}
           onContribute={handleContribute}
           onConfirm={() => submitConfirmation(false)}
           onDecline={() => submitConfirmation(true)}
@@ -287,10 +303,6 @@ export function ContributeFlowModal({
         />
       }
     >
-      <h2 id={titleId} className="sr-only">
-        {stepTitle(step, target)}
-      </h2>
-
       {step !== "done" && <StepIndicator current={stepIndex} />}
 
       {error && error !== "popup-blocked" && (
@@ -334,8 +346,16 @@ export function ContributeFlowModal({
           confirmedText={confirmedText}
           onConfirmedText={setConfirmedText}
           receipt={receipt}
-          onReceipt={setReceipt}
-          onClearReceipt={() => setReceipt(null)}
+          onReceipt={(nextReceipt) => {
+            setReceipt(nextReceipt);
+            setUploadedReceiptKey(null);
+            setReceiptOutcome("not-requested");
+          }}
+          onClearReceipt={() => {
+            setReceipt(null);
+            setUploadedReceiptKey(null);
+            setReceiptOutcome("not-requested");
+          }}
           attested={attested}
           onAttested={(v) => {
             setAttested(v);
@@ -348,8 +368,8 @@ export function ContributeFlowModal({
       {step === "done" && (
         <DoneStep
           target={target}
-          amountCents={effectiveConfirmedCents() ?? amountCents}
-          hasReceipt={Boolean(receipt)}
+          amountCents={recordedAmountCents ?? amountCents}
+          receiptOutcome={receiptOutcome}
         />
       )}
     </ModalSheet>
@@ -373,12 +393,19 @@ function stepTitle(step: Step, target: TargetView): string {
 function StepIndicator({ current }: { current: number }) {
   const steps = ["Amount", "Donate", "Confirm"];
   return (
-    <ol className="mb-4 flex items-center gap-2" aria-label="Progress">
+    <ol
+      className="mb-4 flex items-center gap-2"
+      aria-label={`Progress: step ${current + 1} of ${steps.length}`}
+    >
       {steps.map((label, i) => {
         const done = i < current;
         const active = i === current;
         return (
-          <li key={label} className="flex flex-1 items-center gap-2">
+          <li
+            key={label}
+            className="flex flex-1 items-center gap-2"
+            aria-current={active ? "step" : undefined}
+          >
             <div className="flex flex-1 flex-col gap-1.5">
               <div
                 className={cn(
@@ -393,7 +420,7 @@ function StepIndicator({ current }: { current: number }) {
                     ? "text-brand-700"
                     : done
                       ? "text-ink-600"
-                      : "text-ink-400",
+                      : "text-ink-500",
                 )}
               >
                 {label}
@@ -402,7 +429,6 @@ function StepIndicator({ current }: { current: number }) {
           </li>
         );
       })}
-      <span className="sr-only">Step {current + 1} of 3</span>
     </ol>
   );
 }
@@ -659,7 +685,7 @@ function ConfirmStep({
         <>
           <ReceiptDropzone onResult={onReceipt} onClear={onClearReceipt} />
           <p className="text-xs text-ink-500">
-            A receipt moves your contribution into the verified part of the
+            A receipt moves your contribution into the receipt-backed part of the
             progress bar. Without one it still counts, just as self-reported.
           </p>
         </>
@@ -678,11 +704,11 @@ function ConfirmStep({
 function DoneStep({
   target,
   amountCents,
-  hasReceipt,
+  receiptOutcome,
 }: {
   target: TargetView;
   amountCents: number;
-  hasReceipt: boolean;
+  receiptOutcome: ReceiptOutcome;
 }) {
   return (
     <div className="space-y-4 py-2">
@@ -707,9 +733,11 @@ function DoneStep({
         <p className="mt-1 text-sm text-ink-600">
           Thanks for backing {target.candidate.fullName} with{" "}
           {target.coalition.name}.
-          {hasReceipt
-            ? " Your receipt puts this in the verified segment."
-            : " This counts as self-reported."}
+          {receiptOutcome === "stored"
+            ? " Your receipt was attached and puts this in the receipt-backed segment."
+            : receiptOutcome === "failed"
+              ? " We couldn't attach your receipt, so this counts as self-reported."
+              : " This counts as self-reported."}
         </p>
       </div>
 
@@ -724,7 +752,6 @@ function ModalFooter({
   step,
   busy,
   amountCents,
-  attested,
   onContribute,
   onConfirm,
   onDecline,
@@ -736,7 +763,6 @@ function ModalFooter({
   step: Step;
   busy: boolean;
   amountCents: number;
-  attested: boolean;
   onContribute: () => void;
   onConfirm: () => void;
   onDecline: () => void;
@@ -779,7 +805,6 @@ function ModalFooter({
           fullWidth
           loading={busy}
           onClick={onConfirm}
-          aria-describedby={attested ? undefined : "attest-required"}
         >
           Yes, I contributed
         </Button>
@@ -822,7 +847,6 @@ async function uploadReceipt(
     if (!res.ok) return null;
 
     const payload = await res.json();
-    if (payload.mode === "demo") return payload.objectKey;
     if (!payload.uploadUrl) return null;
 
     const upload = await fetch(payload.uploadUrl, {

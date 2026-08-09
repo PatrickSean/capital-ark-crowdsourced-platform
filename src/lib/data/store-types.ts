@@ -1,12 +1,18 @@
 import type { Jurisdiction, Party, Platform } from "@/generated/prisma/enums";
 import type {
   ActivityItem,
+  CandidateView,
   CoalitionView,
   PledgeView,
   ProgressSnapshot,
   ResumablePledge,
   TargetView,
 } from "@/lib/domain/types";
+
+export interface PledgeConfirmationContext {
+  pledge: PledgeView;
+  candidate: Pick<CandidateView, "jurisdiction" | "state">;
+}
 
 export interface CreatePledgeInput {
   userId: string;
@@ -90,6 +96,9 @@ export interface Store {
 
   createPledge(input: CreatePledgeInput): Promise<PledgeView>;
   getPledge(pledgeId: string): Promise<PledgeView | null>;
+  getPledgeConfirmationContext(
+    pledgeId: string,
+  ): Promise<PledgeConfirmationContext | null>;
   confirmPledge(input: ConfirmPledgeInput): Promise<PledgeView | null>;
   listResumablePledges(userId: string): Promise<ResumablePledge[]>;
 

@@ -71,5 +71,6 @@ export const LIMITS = {
   /** Same, per IP, to catch one script cycling anonymous identities. */
   generateLinkPerIp: { limit: 40, windowMs: 60_000 },
   confirmPledge: { limit: 20, windowMs: 60_000 },
+  receiptUpload: { limit: 10, windowMs: 60_000 },
   createCoalition: { limit: 5, windowMs: 60 * 60_000 },
 } as const;
