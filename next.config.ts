@@ -2,6 +2,34 @@ import type { NextConfig } from "next";
 
 const isDevelopment = process.env.NODE_ENV === "development";
 
+function configuredSiteOrigin() {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    const localDevelopmentOrigin =
+      isDevelopment &&
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+
+    if (
+      (url.protocol !== "https:" && !localDevelopmentOrigin) ||
+      url.username ||
+      url.password ||
+      (url.pathname !== "/" && url.pathname !== "") ||
+      url.search ||
+      url.hash
+    ) {
+      return null;
+    }
+
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDevelopment ? " 'unsafe-eval'" : ""} https://challenges.cloudflare.com https://cdn.jsdelivr.net`,
@@ -68,9 +96,16 @@ const applicationDocumentHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
 ];
 
+const canonicalSiteOrigin = configuredSiteOrigin();
+const widgetBuilderFrameSources = [
+  "'self'",
+  ...(canonicalSiteOrigin ? [canonicalSiteOrigin] : []),
+  "https://challenges.cloudflare.com",
+  "https://docs.google.com",
+].join(" ");
 const widgetBuilderContentSecurityPolicy = contentSecurityPolicy.replace(
   "frame-src https://challenges.cloudflare.com",
-  "frame-src 'self' https://challenges.cloudflare.com https://docs.google.com",
+  `frame-src ${widgetBuilderFrameSources}`,
 );
 
 const nextConfig: NextConfig = {
