@@ -167,7 +167,8 @@ function seedState(): DemoState {
   // rows, so local and deployed pages tell the same story.
   for (const [index, target] of ncHemp.hempTargets.entries()) {
     const activityId = ncHemp.hempLaunchActivityIds[index];
-    if (!activityId) continue;
+    const createdAt = ncHemp.hempLaunchActivityDates[index];
+    if (!activityId || !createdAt) continue;
 
     state.activity.push({
       id: activityId,
@@ -178,7 +179,7 @@ function seedState(): DemoState {
       actorLabel: null,
       amountCents: null,
       message: target.title,
-      createdAt: ncHemp.HEMP_LAUNCHED_AT,
+      createdAt,
     });
   }
 
