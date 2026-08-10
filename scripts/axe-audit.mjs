@@ -34,21 +34,14 @@ try {
     for (const route of routes) {
       await page.goto(`${BASE}${route}`, { waitUntil: "networkidle" });
       await page.addScriptTag({ content: axe.source });
-      const result = await page.evaluate(async () =>
-        globalThis.axe.run(document, {
-          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"] },
-        }),
-      );
+      await collectViolations(page, route, viewport.name, "default");
 
-      for (const violation of result.violations) {
-        failures.push({
-          route,
-          viewport: viewport.name,
-          id: violation.id,
-          impact: violation.impact,
-          nodes: violation.nodes.length,
-          help: violation.help,
-        });
+      if (route === "/partners/widgets") {
+        const drivePicker = page.locator('button[aria-haspopup="listbox"]');
+        if ((await drivePicker.count()) > 0) {
+          await drivePicker.click();
+          await collectViolations(page, route, viewport.name, "picker-open");
+        }
       }
     }
 
@@ -56,6 +49,29 @@ try {
   }
 } finally {
   await browser.close();
+}
+
+async function collectViolations(page, route, viewport, state) {
+  const result = await page.evaluate(async () =>
+    globalThis.axe.run(document, {
+      runOnly: {
+        type: "tag",
+        values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"],
+      },
+    }),
+  );
+
+  for (const violation of result.violations) {
+    failures.push({
+      route,
+      viewport,
+      state,
+      id: violation.id,
+      impact: violation.impact,
+      nodes: violation.nodes.length,
+      help: violation.help,
+    });
+  }
 }
 
 if (failures.length > 0) {

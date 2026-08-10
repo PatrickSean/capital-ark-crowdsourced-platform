@@ -3,7 +3,6 @@ import { DisclaimerFooter } from "@/components/compliance/disclaimer-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 import {
   PartnerWidgetBuilder,
-  type PartnerWidgetDrive,
 } from "@/components/partners/partner-widget-builder";
 import { isDemoMode, store } from "@/lib/data";
 import { siteUrl } from "@/lib/site";
@@ -18,21 +17,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PartnerWidgetsPage() {
-  const coalitions = await store.listCoalitions();
-  const drives = (
-    await Promise.all(
-      coalitions.map(async (coalition): Promise<PartnerWidgetDrive | null> => {
-        const targets = await store.listTargetsForCoalition(coalition.id);
-        if (targets.length === 0) return null;
-
-        return {
-          name: coalition.name,
-          slug: coalition.slug,
-          targetCount: targets.length,
-        };
-      }),
-    )
-  ).filter((drive): drive is PartnerWidgetDrive => drive !== null);
+  const drives = await store.listEmbeddableDrives();
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink-50">
