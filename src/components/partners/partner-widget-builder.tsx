@@ -172,12 +172,16 @@ export function PartnerWidgetBuilder({
       frame.contentWindow?.postMessage(
         { type: CAPITAL_ARK_EMBED_RESIZE_REQUEST },
         expectedOrigin,
-      );
+    );
     frame.addEventListener("load", requestHeight);
     requestHeight();
+    const requestTimers = [250, 1_000].map((delay) =>
+      window.setTimeout(requestHeight, delay),
+    );
 
     return () => {
       window.clearTimeout(failureTimer);
+      requestTimers.forEach((timer) => window.clearTimeout(timer));
       window.removeEventListener("message", onResizeMessage);
       frame.removeEventListener("load", requestHeight);
     };
