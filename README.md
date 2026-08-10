@@ -138,6 +138,9 @@ treated as a supported production contract.
 What is supported today:
 
 - link to public coalition and target pages;
+- generate a read-only, responsive iframe for an existing public coalition;
+- place a separate organization-owned Google Form beside that iframe so form
+  responses go directly to the organization rather than Capital Ark;
 - fork or self-host the application under Apache-2.0; and
 - inspect the current route code to prototype an integration against a fork
   you control.
@@ -146,7 +149,7 @@ What is not implemented yet:
 
 - API keys, OAuth clients, tenant scopes, or a versioned API;
 - signed contribution webhooks or real-time WhatsApp delivery;
-- a supported embeddable widget; or
+- organization accounts, saved widget settings, CRM OAuth, or lead storage; or
 - a service-level agreement for the internal aggregate-progress route.
 
 The proposed privacy-preserving contract, event model, and readiness gates are
@@ -166,8 +169,10 @@ src/
     c/[slug]             Coalition dashboard
     t/[slug]             Public target page — where shared links land
     start                One-screen organizer wizard
+    embed/[slug]         Privacy-minimized public coalition iframe
+    partners/widgets     No-login widget and Google Form embed builder
     api/                 generate-link, pledges/confirm, progress, receipts,
-                         account/claim, coalitions
+                         account/claim, coalitions, read-only embed snapshot
   components/
     contribute/          The flow: modal state machine, return detection,
                          receipt dropzone with OCR, resume banner
@@ -325,8 +330,8 @@ custody.
 
 ## Roadmap, not promises
 
-Potential next steps are a versioned aggregate API, scoped developer
-credentials, signed webhooks, an embeddable progress component, an OpenAPI
-description, and deploy-to-source provenance. None is a supported feature until
-its authentication, privacy review, documentation, tests, and compatibility
-policy land in a release.
+Potential next steps are organization workspaces, saved widget settings,
+approved-domain controls, a versioned aggregate API, scoped developer
+credentials, signed webhooks, an OpenAPI description, and deploy-to-source
+provenance. None is a supported feature until its authentication, privacy
+review, documentation, tests, and compatibility policy land in a release.

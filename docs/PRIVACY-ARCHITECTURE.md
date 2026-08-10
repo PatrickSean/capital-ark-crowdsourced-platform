@@ -172,6 +172,29 @@ The public activity adapter deliberately omits contributor labels. Adding a
 first name and last initial would require separate, explicit, revocable opt-in;
 it must never be inferred from receipt content.
 
+### 7. Partner embeds and organization-owned signup forms
+
+The supported partner widget is a dedicated read-only document under
+`/embed/{coalition-slug}`. It receives an allowlisted public DTO rather than a
+database record, does not initialize or read a visitor session, polls with
+credentials omitted, and links contribution actions back to the first-party
+Capital Ark experience. Its frame policy permits HTTPS parent pages while the
+rest of the application remains unframeable. The generated iframe uses a
+`no-referrer` policy so Capital Ark is not sent the host page URL.
+
+The optional contact form is not a Capital Ark form. The builder generates a
+second iframe for a validated `docs.google.com/forms` responder URL owned by
+the embedding organization. The visitor's browser submits directly to Google;
+the organization may link that Form to a Google Sheet it controls. Capital Ark
+does not proxy the request, store the response, receive Sheet access, or join
+the form entry to a drive interaction. Builder inputs remain in local component
+state and are not persisted by the application.
+
+This separation is intentional. A future managed CRM connector would cause
+Capital Ark to process contact data even if it immediately forwarded and
+discarded it, so it would require a separate privacy, security, contractual,
+and retention review.
+
 ## Retention visible in this repository
 
 | Record | Current behavior |

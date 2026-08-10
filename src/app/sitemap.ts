@@ -14,6 +14,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${origin}/drives`, changeFrequency: "daily", priority: 0.9 },
     { url: `${origin}/start`, changeFrequency: "monthly", priority: 0.7 },
     {
+      url: `${origin}/partners/widgets`,
+      changeFrequency: "monthly",
+      priority: 0.6,
+    },
+    {
       url: `${origin}/c/${hempCoalition.slug}`,
       lastModified: VERIFIED_DATE,
       changeFrequency: "daily",

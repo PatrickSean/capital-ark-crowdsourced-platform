@@ -75,6 +75,17 @@ export default async function TermsPage() {
               or automatically publish receipt images or personal contribution
               details to them.
             </Term>
+            <Term title="Embedded drives and organization forms">
+              A public drive may be embedded on another website using Capital
+              Ark&rsquo;s provided frame. The host must not hide required context,
+              misstate crowdsourced progress as an official committee total,
+              or imply that Capital Ark endorses the host. An organization may
+              place its own Google or CRM signup form beside the drive, but it
+              must identify itself as the recipient, provide accurate consent
+              and privacy information, secure access to submissions, and honor
+              applicable unsubscribe and deletion obligations. Capital Ark does
+              not receive entries submitted directly to that separate form.
+            </Term>
             <Term title="No legal, tax, or accounting advice">
               Explanations on this site are operational safeguards, not advice.
               Laws and indexed limits can change. Contributors, organizers, and
