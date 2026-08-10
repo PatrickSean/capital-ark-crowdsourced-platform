@@ -14,6 +14,14 @@ const ncHempTargetSlugs = new Set([
   "hemp-robert-t-reives-ii",
   "hemp-josh-stein",
   "hemp-tim-moore",
+  "hemp-diane-wheatley",
+  "hemp-ben-t-moss-jr",
+  "hemp-jonathan-l-almond",
+  "hemp-brian-echevarria",
+  "hemp-erin-pare",
+  "hemp-john-m-blust",
+  "hemp-joe-pike",
+  "hemp-john-l-lowery",
 ]);
 
 export function homeSocialCardPath(): string {

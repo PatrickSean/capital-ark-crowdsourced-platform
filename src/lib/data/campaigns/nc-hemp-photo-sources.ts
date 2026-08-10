@@ -16,10 +16,12 @@ export interface CandidatePhotoSource {
 
 const NCGA_DISCLAIMER_URL = "https://www.ncleg.gov/Disclaimer";
 const RETRIEVED_AT = "2026-08-09";
+const NEW_NCGA_RETRIEVED_AT = "2026-08-10";
 
 const ncgaPortrait = (
   assetName: string,
   memberId: string,
+  retrievedAt = RETRIEVED_AT,
 ): CandidatePhotoSource => ({
   assetPath: `/candidates/${assetName}.webp`,
   credit: "North Carolina General Assembly",
@@ -28,7 +30,7 @@ const ncgaPortrait = (
   originalImageUrl: `https://www.ncleg.gov/Members/MemberImage/H/${memberId}/High`,
   license: "Public domain",
   licenseUrl: NCGA_DISCLAIMER_URL,
-  retrievedAt: RETRIEVED_AT,
+  retrievedAt,
 });
 
 export const NC_HEMP_CANDIDATE_PHOTOS: Readonly<
@@ -42,6 +44,46 @@ export const NC_HEMP_CANDIDATE_PHOTOS: Readonly<
   "Allen Chesser": ncgaPortrait("allen-chesser", "799"),
   "Cody Huneycutt": ncgaPortrait("cody-huneycutt", "833"),
   "Robert T. Reives II": ncgaPortrait("robert-reives", "684"),
+  "Diane Wheatley": ncgaPortrait(
+    "diane-wheatley",
+    "785",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
+  "Ben T. Moss, Jr.": ncgaPortrait(
+    "ben-moss",
+    "784",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
+  "Jonathan L. Almond": ncgaPortrait(
+    "jonathan-almond",
+    "843",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
+  "Brian Echevarria": ncgaPortrait(
+    "brian-echevarria",
+    "828",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
+  "Erin Paré": ncgaPortrait(
+    "erin-pare",
+    "770",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
+  "John M. Blust": ncgaPortrait(
+    "john-blust",
+    "234",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
+  "Joe Pike": ncgaPortrait(
+    "joe-pike",
+    "808",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
+  "John L. Lowery": ncgaPortrait(
+    "john-lowery",
+    "1001",
+    NEW_NCGA_RETRIEVED_AT,
+  ),
   "Josh Stein": {
     assetPath: "/candidates/josh-stein.webp",
     credit:

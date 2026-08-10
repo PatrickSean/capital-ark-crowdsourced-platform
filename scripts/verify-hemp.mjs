@@ -4,8 +4,8 @@
  *   node scripts/verify-hemp.mjs [baseUrl]
  *
  * Checks the two things that would silently ruin this campaign: that the
- * outbound link actually carries refcode=HEMP and nothing else, and that the
- * nine candidates with no processor link cannot be contributed to.
+ * outbound link actually carries refcode=HEMP and nothing else, and that a
+ * candidate without a verified processor link cannot be contributed to.
  */
 import { chromium } from "playwright";
 import { mkdir } from "node:fs/promises";
@@ -45,7 +45,7 @@ try {
 
   const cards = await page.locator("h2:text('Fundraising drives') ~ * a[href^='/t/']").count();
   const driveLinks = await page.locator("a[href^='/t/hemp-']").count();
-  check("all ten drives listed", driveLinks >= 10, `${driveLinks} links (${cards} cards)`);
+  check("all eighteen drives listed", driveLinks >= 18, `${driveLinks} links (${cards} cards)`);
 
   const combinedGoal = await page
     .locator("text=Combined goal")
@@ -53,7 +53,7 @@ try {
     .innerText();
   check(
     "combined goal totals the CSV",
-    combinedGoal.replace(/[^0-9]/g, "") === "640000",
+    combinedGoal.replace(/[^0-9]/g, "") === "694400",
     combinedGoal,
   );
 
@@ -68,8 +68,8 @@ try {
   await page.screenshot({ path: `${SHOTS}/dashboard.png`, fullPage: true });
 
   // ---- A target with no donation link -------------------------------------
-  console.log("\nTarget without a processor link (Destin Hall)");
-  await page.goto(`${BASE}/t/hemp-destin-hall`, { waitUntil: "networkidle" });
+  console.log("\nTarget without a processor link (Joe Pike)");
+  await page.goto(`${BASE}/t/hemp-joe-pike`, { waitUntil: "networkidle" });
 
   const pending = page.locator("text=Not ready for contributions yet");
   check("blocked with an explanation", await pending.isVisible());
@@ -148,7 +148,7 @@ try {
 
   // ---- Federal candidate gets federal wording -----------------------------
   console.log("\nFederal candidate (Tim Moore) is treated differently");
-  await page.goto(`${BASE}/t/hemp-timothy-k-moore`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/t/hemp-tim-moore`, { waitUntil: "networkidle" });
   const moore = await page.locator("main").innerText();
   check("shown as a federal race", moore.includes("U.S. House of Representatives"));
   check("federal limit surfaced", moore.includes("$3,500"));

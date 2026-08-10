@@ -36,7 +36,7 @@ const TAG_PARAM = {
   "secure.anedot.com": "source_code",
 };
 
-// Fixture target ids are deterministic: candidate 220..229 -> target 320..329.
+// Fixture target ids are deterministic: candidate 220..237 -> target 320..337.
 const targetId = (n) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -51,7 +51,15 @@ const EXPECT = [
   ["Robert T. Reives II", 327, "secure.actblue.com"],
   ["Josh Stein", 328, "secure.actblue.com"],
   ["Tim Moore", 329, "secure.anedot.com"],
+  ["Diane Wheatley", 330, "secure.anedot.com"],
+  ["Ben T. Moss, Jr.", 331, "secure.anedot.com"],
+  ["Jonathan L. Almond", 332, "secure.anedot.com"],
+  ["Brian Echevarria", 333, "secure.anedot.com"],
+  ["Erin Paré", 334, "secure.anedot.com"],
+  ["John M. Blust", 335, "secure.anedot.com"],
 ];
+
+const PENDING = ["Joe Pike", "John L. Lowery"];
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -63,6 +71,8 @@ const check = (label, ok, detail = "") => {
 
 const slug = (n) =>
   `hemp-${n
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")}`;
@@ -121,18 +131,22 @@ for (const [name, n, host] of EXPECT) {
   await page.close();
 }
 
-console.log("\nNo drive is left in the pending state");
+console.log("\nOnly candidates without a verified processor stay pending");
 const dash = await ctx.newPage();
 await dash.goto(`${BASE}/c/nc-hemp-industry`, { waitUntil: "networkidle" });
 const body = await dash.locator("main").innerText();
 check(
-  "no 'needs a donation link' warnings",
-  !/needs a donation link/i.test(body),
+  "two 'needs a donation link' warnings",
+  (body.match(/needs a donation link/gi) ?? []).length === PENDING.length,
 );
 check(
-  "ten contribute buttons",
-  (await dash.getByRole("button", { name: /contribute/i }).count()) === 10,
+  "sixteen linked contribution actions",
+  (await dash.getByRole("button", { name: /^Contribute to/i }).count()) ===
+    EXPECT.length,
 );
+for (const name of PENDING) {
+  check(`${name} is identified as pending`, body.includes(name));
+}
 check(
   "NC business-entity notice still shown",
   /business contribution drive/i.test(body),

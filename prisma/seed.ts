@@ -334,7 +334,8 @@ async function seedNcHemp() {
     });
 
     const launchActivityId = ncHemp.hempLaunchActivityIds[index];
-    if (launchActivityId) {
+    const launchActivityDate = ncHemp.hempLaunchActivityDates[index];
+    if (launchActivityId && launchActivityDate) {
       await prisma.activityEvent.upsert({
         where: { id: launchActivityId },
         create: {
@@ -343,13 +344,14 @@ async function seedNcHemp() {
           targetId: t.id,
           type: ActivityType.TARGET_CREATED,
           message: t.title,
-          createdAt: ncHemp.HEMP_LAUNCHED_AT,
+          createdAt: launchActivityDate,
         },
         update: {
           coalitionId: ncHemp.hempCoalition.id,
           targetId: t.id,
           type: ActivityType.TARGET_CREATED,
           message: t.title,
+          createdAt: launchActivityDate,
         },
       });
     }

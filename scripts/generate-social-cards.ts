@@ -241,6 +241,11 @@ async function targetCardSvg(targetIndex: number): Promise<string> {
   const office = `${candidate.office}${candidate.district ? ` · ${candidate.district}` : ""}`;
   const officeLines = wrapText(office, 37, 2);
   const goal = formatShortDollars(target.goalCents);
+  const hasProcessor = Boolean(candidate.donationUrl && candidate.platform);
+  const actionLabel = hasProcessor ? "See live progress →" : "View drive details →";
+  const footer = hasProcessor
+    ? "Contributions go directly to the committee’s official processor."
+    : "Official contribution link pending. Capital Ark never handles payments.";
 
   return shell(`
     <defs>
@@ -262,10 +267,10 @@ async function targetCardSvg(targetIndex: number): Promise<string> {
       <text x="0" y="69" fill="${INK}" font-size="64" font-weight="800">${escapeXml(goal)}</text>
       <g transform="translate(259 16)">
         <rect width="286" height="58" rx="29" fill="${BRAND}"/>
-        <text x="143" y="37" text-anchor="middle" fill="#FFFFFF" font-size="20" font-weight="700">See live progress →</text>
+        <text x="143" y="37" text-anchor="middle" fill="#FFFFFF" font-size="20" font-weight="700">${escapeXml(actionLabel)}</text>
       </g>
     </g>
-    <text x="536" y="586" fill="${MUTED}" font-size="19">Contributions go directly to the committee’s official processor.</text>
+    <text x="536" y="586" fill="${MUTED}" font-size="19">${escapeXml(footer)}</text>
   `);
 }
 

@@ -40,6 +40,7 @@ import { getNcHempCandidatePhotoSource } from "./nc-hemp-photo-sources";
 const id = (n: string) => `00000000-0000-4000-8000-${n.padStart(12, "0")}`;
 export const HEMP_LAUNCHED_AT = new Date("2026-08-08T00:00:00.000Z");
 const VERIFIED_AT = HEMP_LAUNCHED_AT;
+const EXPANSION_VERIFIED_AT = new Date("2026-08-10T00:00:00.000Z");
 
 export const HEMP_IDS = {
   organizer: id("200"),
@@ -87,8 +88,8 @@ interface HempRow {
   jurisdiction: Jurisdiction;
   goalDollars: number;
   /** Verified live processor page for the named committee. */
-  donationUrl: string;
-  platform: Platform;
+  donationUrl: string | null;
+  platform: Platform | null;
   /**
    * Exactly as the processor page renders it. Shown on the handoff screen so a
    * contributor can check the name on the donation page against the name we
@@ -102,10 +103,14 @@ interface HempRow {
   websiteUrl: string | null;
   /** Current official government profile used to verify office and district. */
   officialProfileUrl: string;
+  /** Per-row verification date for candidates added after the initial launch. */
+  verifiedAt?: Date;
 }
 
-// All offices, districts, parties, committee IDs, and processor links were
-// re-verified against NCGA/NCSBE/FEC/House records and current campaign sites.
+// Offices, districts, parties, committee IDs, and every populated processor
+// link were verified against current government records and campaign sites.
+// A null processor is intentional: it keeps the candidate visible while
+// preventing Capital Ark from guessing where a contribution should be sent.
 const ROWS: HempRow[] = [
   {
     n: "220",
@@ -281,10 +286,150 @@ const ROWS: HempRow[] = [
     websiteUrl: "https://www.timmoore.com/",
     officialProfileUrl: "https://clerk.house.gov/members/M001236",
   },
+  {
+    n: "230",
+    fullName: "Diane Wheatley",
+    legalName: "Diane Davis Wheatley",
+    office: "NC House of Representatives",
+    district: "House District 43",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl: "https://secure.anedot.com/wheatley/donate",
+    platform: Platform.ANEDOT,
+    committeeName: "Diane Wheatley for NC House 43",
+    ncsbeCommitteeId: "STA-V11XUW-C-002",
+    websiteUrl: "https://www.dianewheatleync.com/",
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/785",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
+  {
+    n: "231",
+    fullName: "Ben T. Moss, Jr.",
+    legalName: "Ben Thomas Moss, Jr.",
+    office: "NC House of Representatives",
+    district: "House District 52",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl:
+      "https://secure.anedot.com/moss/15413d64-2f3c-405c-a488-ca19030e8462",
+    platform: Platform.ANEDOT,
+    committeeName: "North Carolinians for Ben Moss",
+    ncsbeCommitteeId: "STA-QX1K4Q-C-001",
+    websiteUrl: "https://www.benmossnc.com/",
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/784",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
+  {
+    n: "232",
+    fullName: "Jonathan L. Almond",
+    legalName: "Jonathan Lemuel Almond",
+    office: "NC House of Representatives",
+    district: "House District 73",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl: "https://secure.anedot.com/almond-nc-house/support",
+    platform: Platform.ANEDOT,
+    committeeName: "Committee to Elect Jonathan Almond",
+    ncsbeCommitteeId: "STA-1CCDMB-C-001",
+    websiteUrl: "https://jonathanalmond.com/",
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/843",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
+  {
+    n: "233",
+    fullName: "Brian Echevarria",
+    legalName: "Brian Dwight Echevarria",
+    office: "NC House of Representatives",
+    district: "House District 82",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl: "https://secure.anedot.com/fios/donate",
+    platform: Platform.ANEDOT,
+    committeeName: "Elect Brian Echevarria",
+    ncsbeCommitteeId: "STA-657J73-C-001",
+    websiteUrl: "https://brianechevarria.com/",
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/828",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
+  {
+    n: "234",
+    fullName: "Erin Paré",
+    legalName: "Erin Pauling Paré",
+    office: "NC House of Representatives",
+    district: "House District 37",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl:
+      "https://secure.anedot.com/committee-to-elect-erin-pare/donate",
+    platform: Platform.ANEDOT,
+    committeeName: "Committee to Elect Erin Paré",
+    ncsbeCommitteeId: "STA-6386JQ-C-001",
+    websiteUrl: "https://erinfornc.com/",
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/770",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
+  {
+    n: "235",
+    fullName: "John M. Blust",
+    legalName: "John Marshall Blust",
+    office: "NC House of Representatives",
+    district: "House District 62",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl: "https://secure.anedot.com/blust-for-nc-house/donate",
+    platform: Platform.ANEDOT,
+    committeeName: "Blust for NC House",
+    ncsbeCommitteeId: "STA-C1805N-C-002",
+    websiteUrl: "https://www.blustfornchouse.com/",
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/234",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
+  {
+    n: "236",
+    fullName: "Joe Pike",
+    legalName: "Joseph Patrick Pike",
+    office: "NC House of Representatives",
+    district: "House District 6",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl: null,
+    platform: null,
+    committeeName: "Pike for District 6",
+    ncsbeCommitteeId: "STA-976051-C-001",
+    websiteUrl: null,
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/808",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
+  {
+    n: "237",
+    fullName: "John L. Lowery",
+    legalName: "John Lee Lowery",
+    office: "NC House of Representatives",
+    district: "House District 47",
+    party: Party.REPUBLICAN,
+    jurisdiction: Jurisdiction.STATE,
+    goalDollars: 6_800,
+    donationUrl: null,
+    platform: null,
+    committeeName: "Friends of John Lowery",
+    ncsbeCommitteeId: "STA-DEZ9H1-C-001",
+    websiteUrl: "https://www.johnlowerync.com/",
+    officialProfileUrl: "https://www.ncleg.gov/Members/Biography/H/1001",
+    verifiedAt: EXPANSION_VERIFIED_AT,
+  },
 ];
 
 const slugify = (value: string) =>
   value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -292,29 +437,33 @@ const slugify = (value: string) =>
 /** Accessible consumer-sized defaults, stored in cents: $25, $50, $100, $250. */
 const SUGGESTED_AMOUNTS = [2_500, 5_000, 10_000, 25_000];
 
-export const hempCandidates: FixtureCandidate[] = ROWS.map((row) => ({
-  id: id(row.n),
-  slug: `nc-hemp-${slugify(row.fullName)}`,
-  fullName: row.fullName,
-  legalName: row.legalName,
-  party: row.party,
-  office: row.office,
-  state: "NC",
-  district: row.district,
-  bio: null,
-  photoUrl: getNcHempCandidatePhotoSource(row.fullName)?.assetPath ?? null,
-  donationUrl: row.donationUrl,
-  donationUrlVerifiedAt: VERIFIED_AT,
-  platform: row.platform,
-  websiteUrl: row.websiteUrl,
-  officialProfileUrl: row.officialProfileUrl,
-  officialDataVerifiedAt: VERIFIED_AT,
-  jurisdiction: row.jurisdiction,
-  committeeName: row.committeeName,
-  ncsbeCommitteeId: row.ncsbeCommitteeId ?? null,
-  fecCandidateId: row.fecCandidateId ?? null,
-  fecCommitteeId: row.fecCommitteeId ?? null,
-}));
+export const hempCandidates: FixtureCandidate[] = ROWS.map((row) => {
+  const verifiedAt = row.verifiedAt ?? VERIFIED_AT;
+
+  return {
+    id: id(row.n),
+    slug: `nc-hemp-${slugify(row.fullName)}`,
+    fullName: row.fullName,
+    legalName: row.legalName,
+    party: row.party,
+    office: row.office,
+    state: "NC",
+    district: row.district,
+    bio: null,
+    photoUrl: getNcHempCandidatePhotoSource(row.fullName)?.assetPath ?? null,
+    donationUrl: row.donationUrl,
+    donationUrlVerifiedAt: row.donationUrl ? verifiedAt : null,
+    platform: row.platform,
+    websiteUrl: row.websiteUrl,
+    officialProfileUrl: row.officialProfileUrl,
+    officialDataVerifiedAt: verifiedAt,
+    jurisdiction: row.jurisdiction,
+    committeeName: row.committeeName,
+    ncsbeCommitteeId: row.ncsbeCommitteeId ?? null,
+    fecCandidateId: row.fecCandidateId ?? null,
+    fecCommitteeId: row.fecCommitteeId ?? null,
+  };
+});
 
 const goalLabel = (dollars: number) =>
   new Intl.NumberFormat("en-US", {
@@ -337,4 +486,9 @@ export const hempTargets: FixtureTarget[] = ROWS.map((row) => ({
 /** Stable IDs for factual, idempotent launch-history activity rows. */
 export const hempLaunchActivityIds = ROWS.map((row) =>
   id(String(Number(row.n) + 200)),
+);
+
+/** The factual date each target first joined this public drive. */
+export const hempLaunchActivityDates = ROWS.map(
+  (row) => row.verifiedAt ?? HEMP_LAUNCHED_AT,
 );

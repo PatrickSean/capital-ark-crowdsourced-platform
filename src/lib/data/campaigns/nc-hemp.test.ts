@@ -5,6 +5,7 @@ import { Jurisdiction, Party } from "@/generated/prisma/enums";
 import {
   hempCandidates,
   hempCoalition,
+  hempLaunchActivityDates,
   hempLaunchActivityIds,
   hempOrganizer,
   hempTargets,
@@ -25,14 +26,22 @@ const expected = [
   ["Robert T. Reives II", "House District 54", Party.DEMOCRAT, 50_000],
   ["Josh Stein", null, Party.DEMOCRAT, 100_000],
   ["Tim Moore", "NC-14", Party.REPUBLICAN, 150_000],
+  ["Diane Wheatley", "House District 43", Party.REPUBLICAN, 6_800],
+  ["Ben T. Moss, Jr.", "House District 52", Party.REPUBLICAN, 6_800],
+  ["Jonathan L. Almond", "House District 73", Party.REPUBLICAN, 6_800],
+  ["Brian Echevarria", "House District 82", Party.REPUBLICAN, 6_800],
+  ["Erin Paré", "House District 37", Party.REPUBLICAN, 6_800],
+  ["John M. Blust", "House District 62", Party.REPUBLICAN, 6_800],
+  ["Joe Pike", "House District 6", Party.REPUBLICAN, 6_800],
+  ["John L. Lowery", "House District 47", Party.REPUBLICAN, 6_800],
 ] as const;
 
 describe("verified NC Hemp fundraising slate", () => {
-  it("contains exactly the ten supplied targets and totals $640,000", () => {
+  it("contains the eighteen approved targets and totals $694,400", () => {
     expect(hempCandidates).toHaveLength(expected.length);
     expect(hempTargets).toHaveLength(expected.length);
     expect(hempTargets.reduce((sum, target) => sum + target.goalCents, 0)).toBe(
-      640_000 * 100,
+      694_400 * 100,
     );
 
     expected.forEach(([name, district, party, goalDollars], index) => {
@@ -60,6 +69,13 @@ describe("verified NC Hemp fundraising slate", () => {
   it("reserves one stable launch-history event id for each target", () => {
     expect(hempLaunchActivityIds).toHaveLength(hempTargets.length);
     expect(new Set(hempLaunchActivityIds).size).toBe(hempTargets.length);
+    expect(hempLaunchActivityDates).toHaveLength(hempTargets.length);
+    expect(hempLaunchActivityDates.slice(0, 10)).toEqual(
+      Array(10).fill(new Date("2026-08-08T00:00:00.000Z")),
+    );
+    expect(hempLaunchActivityDates.slice(10)).toEqual(
+      Array(8).fill(new Date("2026-08-10T00:00:00.000Z")),
+    );
   });
 
   it("ships a locally optimized portrait with source provenance for every candidate", () => {
@@ -99,7 +115,7 @@ describe("verified NC Hemp fundraising slate", () => {
       (candidate) => candidate.fullName === "Tim Moore",
     );
 
-    expect(stateCandidates).toHaveLength(9);
+    expect(stateCandidates).toHaveLength(17);
     expect(
       stateCandidates.every((candidate) => candidate.ncsbeCommitteeId),
     ).toBe(true);
@@ -117,8 +133,14 @@ describe("verified NC Hemp fundraising slate", () => {
     });
   });
 
-  it("uses unique live processor links and no placeholder organizer email", () => {
-    const urls = hempCandidates.map((candidate) => candidate.donationUrl);
+  it("uses unique live processor links where available and no placeholder organizer email", () => {
+    const linkedCandidates = hempCandidates.filter(
+      (candidate) => candidate.donationUrl,
+    );
+    const urls = linkedCandidates.map((candidate) => candidate.donationUrl!);
+    const expandedNames = new Set<string>(
+      expected.slice(10).map(([name]) => name),
+    );
     const allowedHosts = new Set([
       "secure.actblue.com",
       "secure.anedot.com",
@@ -126,19 +148,34 @@ describe("verified NC Hemp fundraising slate", () => {
     ]);
 
     expect(hempOrganizer.email).toBeNull();
-    expect(new Set(urls).size).toBe(hempCandidates.length);
+    expect(linkedCandidates).toHaveLength(16);
+    expect(new Set(urls).size).toBe(linkedCandidates.length);
     for (const candidate of hempCandidates) {
-      expect(candidate.donationUrl).not.toBeNull();
-      expect(allowedHosts.has(new URL(candidate.donationUrl!).hostname)).toBe(
-        true,
-      );
-      expect(candidate.donationUrlVerifiedAt?.toISOString()).toBe(
-        "2026-08-08T00:00:00.000Z",
-      );
+      if (candidate.donationUrl) {
+        expect(allowedHosts.has(new URL(candidate.donationUrl).hostname)).toBe(
+          true,
+        );
+        expect(candidate.donationUrlVerifiedAt?.toISOString()).toBe(
+          expandedNames.has(candidate.fullName)
+            ? "2026-08-10T00:00:00.000Z"
+            : "2026-08-08T00:00:00.000Z",
+        );
+      } else {
+        expect(candidate.donationUrlVerifiedAt).toBeNull();
+        expect(candidate.platform).toBeNull();
+      }
       expect(candidate.officialProfileUrl).toMatch(/^https:\/\//);
       expect(candidate.officialDataVerifiedAt?.toISOString()).toBe(
-        "2026-08-08T00:00:00.000Z",
+        expandedNames.has(candidate.fullName)
+          ? "2026-08-10T00:00:00.000Z"
+          : "2026-08-08T00:00:00.000Z",
       );
     }
+
+    expect(
+      hempCandidates
+        .filter((candidate) => !candidate.donationUrl)
+        .map((candidate) => candidate.fullName),
+    ).toEqual(["Joe Pike", "John L. Lowery"]);
   });
 });
