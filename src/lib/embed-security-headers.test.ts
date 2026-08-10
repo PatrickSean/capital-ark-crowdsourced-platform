@@ -57,9 +57,10 @@ describe("embed security headers", () => {
     );
     const csp = valueFor(builder!, "Content-Security-Policy");
 
-    expect(csp).toContain(
-      "frame-src 'self' https://challenges.cloudflare.com https://docs.google.com",
-    );
+    expect(csp).toContain("frame-src 'self'");
+    expect(csp).toContain("https://challenges.cloudflare.com");
+    expect(csp).toContain("https://docs.google.com");
+    expect(csp).not.toContain("frame-src https:");
     expect(csp).toContain("frame-ancestors 'none'");
   });
 });

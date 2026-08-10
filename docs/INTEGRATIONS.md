@@ -197,6 +197,13 @@ not part of the Capital Ark iframe. Organization accounts, saved widget
 configuration, approved-domain controls, custom themes, analytics, API keys,
 and CRM OAuth connections are not implemented in this pilot.
 
+Partner pages must be published over HTTPS. If the partner site sets a Content
+Security Policy, its `frame-src` directive must allow the exact Capital Ark
+origin (`https://capitalark.com`) and, when the optional form is present,
+`https://docs.google.com`. Some CMS editors intentionally block third-party
+frames even when the published page permits them, so verify the published page
+and keep the generated full-drive link as a fallback.
+
 ## Readiness gates for future APIs, webhooks, and managed integrations
 
 An API, webhook, or managed integration is not supported until all applicable

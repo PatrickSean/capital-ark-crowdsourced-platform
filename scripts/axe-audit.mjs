@@ -15,6 +15,8 @@ const routes = [
   "/compliance",
   "/privacy",
   "/terms",
+  "/partners/widgets",
+  "/embed/nc-hemp-industry",
 ];
 const viewports = [
   { name: "desktop", width: 1440, height: 1000 },

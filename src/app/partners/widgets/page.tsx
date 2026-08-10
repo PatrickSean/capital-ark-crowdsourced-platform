@@ -42,7 +42,7 @@ export default async function PartnerWidgetsPage() {
         id="main-content"
         className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8"
       >
-        <header className="mb-8 max-w-3xl sm:mb-10">
+        <header className="mb-7 max-w-2xl sm:mb-9">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold tracking-wide text-brand-700 uppercase">
               Partner tools
@@ -52,17 +52,21 @@ export default async function PartnerWidgetsPage() {
             </span>
           </div>
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-balance text-ink-900 sm:text-4xl">
-            Put a fundraising drive on your website
+            Embed a drive on your website
           </h1>
           <p className="mt-3 text-base leading-relaxed text-pretty text-ink-600 sm:text-lg">
-            Choose a public Capital Ark drive, preview it, and copy one
-            responsive HTML block. You can also place your organization&rsquo;s
-            Google Form beside it without routing form responses through
-            Capital Ark.
+            Choose a public drive, preview it, and copy a responsive embed.
+            Optionally connect a company-owned Google Form without sending its
+            responses through Capital Ark.
           </p>
-          <p className="mt-3 text-sm font-medium text-ink-700">
-            No login. No saved setup. No organization account during the pilot.
-          </p>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-ink-700">
+            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-ink-200">
+              No account required
+            </span>
+            <span className="rounded-full bg-white px-3 py-1.5 ring-1 ring-ink-200">
+              Setup stays in your browser
+            </span>
+          </div>
         </header>
 
         <PartnerWidgetBuilder drives={drives} siteOrigin={siteUrl()} />
