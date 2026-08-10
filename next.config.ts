@@ -100,6 +100,9 @@ const canonicalSiteOrigin = configuredSiteOrigin();
 const widgetBuilderFrameSources = [
   "'self'",
   ...(canonicalSiteOrigin ? [canonicalSiteOrigin] : []),
+  ...(isDevelopment
+    ? ["http://localhost:*", "http://127.0.0.1:*"]
+    : []),
   "https://challenges.cloudflare.com",
   "https://docs.google.com",
 ].join(" ");

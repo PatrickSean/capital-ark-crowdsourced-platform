@@ -411,9 +411,9 @@ export function PartnerWidgetBuilder({
             </p>
             <p className="mt-1 text-xs leading-relaxed text-ink-600">
               This builder has no Save button. Your selections stay in this
-              browser tab and are not submitted to Capital Ark. {includeGoogleForm
-                ? "In the finished widget, form responses go from each visitor’s browser directly to Google."
-                : "The embed contains only the public drive information already shown on Capital Ark."}
+              browser tab and are not submitted to Capital Ark. In the finished
+              widget, form responses go from each visitor&rsquo;s browser
+              directly to Google.
             </p>
           </div>
 
