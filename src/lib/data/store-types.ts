@@ -115,6 +115,13 @@ export interface UserPatch {
   zip?: string | null;
 }
 
+/** Minimal public catalog row used by the partner widget builder. */
+export interface EmbeddableDriveSummary {
+  name: string;
+  slug: string;
+  targetCount: number;
+}
+
 /**
  * The single data interface the whole app talks to. Two implementations back
  * it: Prisma when DATABASE_URL is set, and an in-memory demo store otherwise.
@@ -126,6 +133,7 @@ export interface Store {
 
   getCoalitionBySlug(slug: string): Promise<CoalitionView | null>;
   listCoalitions(): Promise<CoalitionView[]>;
+  listEmbeddableDrives(): Promise<EmbeddableDriveSummary[]>;
   listTargetsForCoalition(coalitionId: string): Promise<TargetView[]>;
   getTargetBySlug(slug: string): Promise<TargetView | null>;
   getTargetById(targetId: string): Promise<TargetView | null>;

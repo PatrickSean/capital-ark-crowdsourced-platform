@@ -96,6 +96,27 @@ interface DemoState {
   activity: ActivityRecord[];
 }
 
+function buildEmbeddableDriveCatalog(
+  coalitions: Iterable<fixtures.FixtureCoalition>,
+  targets: Iterable<fixtures.FixtureTarget & { coalitionId: string }>,
+) {
+  const targetRows = [...targets];
+
+  return [...coalitions]
+    .filter((coalition) => coalition.isPublic)
+    .map((coalition) => ({
+      name: coalition.name,
+      slug: coalition.slug,
+      // Demo targets do not persist a status yet and are all exposed as ACTIVE
+      // by toTargetView. Keep this count aligned with that model.
+      targetCount: targetRows.filter(
+        (target) => target.coalitionId === coalition.id,
+      ).length,
+    }))
+    .filter((drive) => drive.targetCount > 0)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function seedState(): DemoState {
   const state: DemoState = {
     users: new Map(),
@@ -415,6 +436,13 @@ export const demoStore: Store = {
 
   async listCoalitions() {
     return [...state.coalitions.values()].map(toCoalitionView);
+  },
+
+  async listEmbeddableDrives() {
+    return buildEmbeddableDriveCatalog(
+      state.coalitions.values(),
+      state.targets.values(),
+    );
   },
 
   async listTargetsForCoalition(coalitionId) {
@@ -809,4 +837,4 @@ function uniqueSlug(base: string, taken: (slug: string) => boolean): string {
   return `${root}-${Date.now()}`;
 }
 
-export { slugify, uniqueSlug };
+export { buildEmbeddableDriveCatalog, slugify, uniqueSlug };

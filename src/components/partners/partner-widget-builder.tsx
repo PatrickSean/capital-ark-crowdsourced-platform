@@ -2,8 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { DrivePicker } from "@/components/partners/drive-picker";
 import { Button } from "@/components/ui/button";
 import { Card, Field, Input } from "@/components/ui/primitives";
+import type { EmbeddableDriveSummary } from "@/lib/data/store-types";
 import {
   GOOGLE_FORMS_RESPONDER_URL_HELP,
   normalizeGoogleFormsResponderUrl,
@@ -18,11 +20,7 @@ import {
   buildPartnerWidgetHtml,
 } from "@/lib/partner-widget";
 
-export interface PartnerWidgetDrive {
-  name: string;
-  slug: string;
-  targetCount: number;
-}
+export type PartnerWidgetDrive = EmbeddableDriveSummary;
 
 type CopyStatus = "idle" | "copied" | "error";
 type PreviewStatus = "loading" | "ready" | "error";
@@ -39,7 +37,6 @@ export function PartnerWidgetBuilder({
   siteOrigin: string;
 }) {
   const controlPrefix = useId();
-  const driveId = `${controlPrefix}-drive`;
   const organizationId = `${controlPrefix}-organization`;
   const formUrlId = `${controlPrefix}-form-url`;
   const formToggleId = `${controlPrefix}-form-toggle`;
@@ -47,7 +44,10 @@ export function PartnerWidgetBuilder({
   const previewPanelId = `${controlPrefix}-preview-panel`;
   const previewFrameRef = useRef<HTMLIFrameElement>(null);
 
-  const [selectedSlug, setSelectedSlug] = useState(drives[0]?.slug ?? "");
+  const [selectedDrive, setSelectedDrive] =
+    useState<EmbeddableDriveSummary | null>(() =>
+      drives.length === 1 ? (drives[0] ?? null) : null,
+    );
   const [includeGoogleForm, setIncludeGoogleForm] = useState(false);
   const [organizationName, setOrganizationName] = useState("");
   const [organizationTouched, setOrganizationTouched] = useState(false);
@@ -66,8 +66,6 @@ export function PartnerWidgetBuilder({
     BUILDER_PREVIEW_FALLBACK_HEIGHT,
   );
 
-  const selectedDrive =
-    drives.find((drive) => drive.slug === selectedSlug) ?? drives[0] ?? null;
   const formUrlResult = normalizeGoogleFormsResponderUrl(googleFormUrl);
   const organizationLength = Array.from(organizationName).length;
   const organizationError =
@@ -249,29 +247,14 @@ export function PartnerWidgetBuilder({
         </h2>
 
         <div className="mt-6 min-w-0 space-y-5">
-          <Field
-            htmlFor={driveId}
-            label="Fundraising drive"
-            hint="Choose one public drive to show on your website."
-          >
-            <select
-              id={driveId}
-              value={selectedDrive?.slug ?? ""}
-              aria-describedby={`${driveId}-hint`}
-              onChange={(event) => {
-                setSelectedSlug(event.target.value);
-                resetCopyStatus();
-              }}
-              className="h-12 w-full min-w-0 max-w-full rounded-xl bg-white px-3.5 text-base text-ink-900 shadow-sm ring-1 ring-inset ring-ink-200 focus:ring-2 focus:ring-brand-600 focus:outline-none"
-            >
-              {drives.map((drive) => (
-                <option key={drive.slug} value={drive.slug}>
-                  {drive.name} ({drive.targetCount}{" "}
-                  {drive.targetCount === 1 ? "candidate" : "candidates"})
-                </option>
-              ))}
-            </select>
-          </Field>
+          <DrivePicker
+            drives={drives}
+            value={selectedDrive}
+            onChange={(drive) => {
+              setSelectedDrive(drive);
+              resetCopyStatus();
+            }}
+          />
 
           <div className="border-t border-ink-100 pt-5">
             <label
@@ -545,7 +528,7 @@ export function PartnerWidgetBuilder({
                     className="h-[720px] w-full rounded-2xl border-0 bg-white shadow-sm ring-1 ring-ink-200"
                   />
                 </section>
-              ) : (
+              ) : selectedDrive ? (
                 <section
                   className="mx-auto min-w-0 max-w-[720px]"
                   aria-labelledby={`${controlPrefix}-drive-preview`}
@@ -628,6 +611,37 @@ export function PartnerWidgetBuilder({
                     ) : null}
                   </div>
                 </section>
+              ) : (
+                <div className="mx-auto flex min-h-72 max-w-[720px] items-center justify-center rounded-2xl bg-white p-6 text-center shadow-sm ring-1 ring-ink-200">
+                  <div className="max-w-sm">
+                    <span
+                      aria-hidden="true"
+                      className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-800"
+                    >
+                      <svg viewBox="0 0 24 24" className="size-6" fill="none">
+                        <path
+                          d="M5 5.5h14v10H8l-3 3v-13Z"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M8.5 9h7M8.5 12h4.5"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </span>
+                    <p className="mt-4 text-base font-bold text-ink-900">
+                      Choose a drive to preview
+                    </p>
+                    <p className="mt-1 text-sm leading-relaxed text-ink-600">
+                      Search the public catalog, select a drive, and its live
+                      widget will appear here.
+                    </p>
+                  </div>
+                </div>
               )}
 
               {formPreviewReady && (

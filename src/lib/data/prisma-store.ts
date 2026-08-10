@@ -311,6 +311,31 @@ export function createPrismaStore(prisma: PrismaClient): Store {
       return rows.map(toCoalitionView);
     },
 
+    async listEmbeddableDrives() {
+      const rows = await prisma.coalition.findMany({
+        where: {
+          isPublic: true,
+          targets: { some: { status: TargetStatus.ACTIVE } },
+        },
+        select: {
+          name: true,
+          slug: true,
+          _count: {
+            select: {
+              targets: { where: { status: TargetStatus.ACTIVE } },
+            },
+          },
+        },
+        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+      });
+
+      return rows.map((row) => ({
+        name: row.name,
+        slug: row.slug,
+        targetCount: row._count.targets,
+      }));
+    },
+
     async listTargetsForCoalition(coalitionId) {
       await maybeExpireStalePledges(prisma);
       const rows = await prisma.fundraisingTarget.findMany({
