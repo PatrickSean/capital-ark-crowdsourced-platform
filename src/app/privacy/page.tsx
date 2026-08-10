@@ -135,6 +135,33 @@ export default async function PrivacyPage() {
             </p>
           </PolicySection>
 
+          <PolicySection title="Embedded drives and organization signup forms">
+            <p>
+              A Capital Ark drive can appear in a read-only frame on another
+              organization&rsquo;s website. The frame receives the same public
+              coalition, candidate, aggregate progress, and anonymized activity
+              information that appears on Capital Ark. It does not request a
+              Capital Ark identity or expose receipt records, contributor
+              identities, or private organizer information to the host site.
+            </p>
+            <p>
+              The widget builder can place a separate, organization-owned
+              Google Form beside the drive. Form entries travel from the
+              visitor&rsquo;s browser to Google and the organization&rsquo;s linked
+              Sheet; Capital Ark does not proxy, store, or receive those form
+              fields. The generated Capital Ark frame also uses a no-referrer
+              policy, so the embedding page address is not sent with its
+              request.
+            </p>
+            <p>
+              The organization controls its form, access permissions, consent
+              language, retention, and use of submitted information. Its own
+              privacy notice and Google&rsquo;s terms apply to that separate form.
+              Do not submit receipt images or contribution details through an
+              organization signup form.
+            </p>
+          </PolicySection>
+
           <PolicySection title="Retention and your choices">
             <p>
               Unresolved contribution intents expire after 72 hours. Confirmed

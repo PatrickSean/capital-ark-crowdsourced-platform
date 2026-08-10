@@ -36,6 +36,12 @@ export function DisclaimerFooter() {
               Start a drive
             </Link>
             <Link
+              href="/partners/widgets"
+              className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
+            >
+              Embed a drive
+            </Link>
+            <Link
               href="/compliance"
               className="tap-target inline-flex items-center text-ink-600 hover:text-ink-900"
             >

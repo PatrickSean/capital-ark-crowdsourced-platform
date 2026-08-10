@@ -5,7 +5,7 @@ own sites while using the platform's drive, target, and progress primitives.
 That can widen adoption, but only if the contract is stable, authenticated, and
 more privacy-preserving than screen scraping or direct database access.
 
-## Current status: no supported public API
+## Current status: supported read-only widget, no public API
 
 The repository contains Next.js route handlers under `/api/*`, but they are
 first-party implementation details for the Capital Ark web interface. They are:
@@ -19,6 +19,11 @@ first-party implementation details for the Capital Ark web interface. They are:
 Reading the code is encouraged. Building a production dependency on the hosted
 internal routes is not supported yet.
 
+The exception is the documented read-only partner widget. It is a hosted UI
+surface, not a general API contract: organizations embed the generated iframe
+and Capital Ark owns compatibility between that frame and its internal public
+snapshot route.
+
 | Capability | Current state | Supported integration? |
 | --- | --- | --- |
 | Link to `/c/{coalition-slug}` or `/t/{target-slug}` | Public web experience | **Yes.** Use ordinary HTTPS links. |
@@ -29,7 +34,8 @@ internal routes is not supported yet.
 | API keys or OAuth clients | Not implemented | **No.** |
 | Webhooks | Not implemented | **No.** |
 | WhatsApp group automation | Not implemented; a group invite URL cannot receive messages | **No.** Official WhatsApp Business/Cloud API capabilities and group restrictions must be evaluated separately. |
-| Embeddable widget | Not implemented; the current CSP denies framing | **No.** Link to a target page instead. |
+| Embeddable widget | Read-only public coalition snapshot | **Yes.** Generate the supported iframe at `/partners/widgets`. |
+| Organization signup form | Separate company-owned Google Form | **Yes.** The builder can place it beside the drive; entries do not pass through Capital Ark. |
 
 The public progress route returns aggregate data today because the first-party
 UI needs it. Its existence is not a promise of field names, uptime, rate limits,
@@ -42,6 +48,22 @@ deprecation notice, or future anonymous access.
 Use the canonical coalition or target URL. It is mobile-ready, contains the
 required context and disclaimers, and keeps the contribution step on the
 candidate's official processor.
+
+### Embed a public drive
+
+Open `/partners/widgets`, choose any existing public coalition, and copy the
+generated HTML into a Custom HTML or Embed block on the partner site. The frame
+shows a privacy-minimized snapshot, refreshes aggregate progress while visible,
+and opens the complete first-party drive in a new tab. It does not embed the
+receipt flow or depend on third-party cookies.
+
+The optional Google Form remains a separate `docs.google.com` iframe. The
+builder validates and normalizes the responder URL, but it does not save the
+URL or form values. Google can store responses in a Sheet owned by the
+organization. Never share the Sheet publicly or grant Capital Ark access.
+
+For email, use the canonical drive link and its social card. Ordinary email
+clients are not a supported iframe or JavaScript runtime.
 
 ### Run a fork you control
 
@@ -154,26 +176,31 @@ customer-controlled service and then call the messaging provider's supported
 business API. A WhatsApp group invite URL is for joining a group; it is not a
 webhook destination and cannot authorize Capital Ark to post messages.
 
-## Proposed embeddable experience
+## Supported embeddable experience
 
-A first-party web component can keep an organization's users on its site while
-avoiding direct API handling in the browser. Before shipping, it needs:
+A first-party iframe can keep an organization's users on its site while
+avoiding direct API handling in the host page. The current boundaries are:
 
-- an explicit allowlist of embedding origins rather than weakening
-  `frame-ancestors` globally;
-- signed, short-lived configuration that identifies only a public drive;
+- only `/embed/*` permits HTTPS framing; the rest of the application retains
+  frame denial;
+- configuration identifies only a public coalition slug;
 - accessible keyboard, screen-reader, reduced-motion, and responsive behavior;
-- a clear transition to the official processor and return-to-confirm flow;
-- isolation from the host page's cookies and scripts; and
-- no cross-site user tracking.
+- a clear new-tab transition to the complete Capital Ark drive;
+- a no-referrer iframe and credential-free snapshot polling;
+- an explicit allowlisted public DTO with no sessions, receipts, processor
+  URLs, tracking configuration, or organizer/contact records; and
+- no contact collection, cross-site user tracking, or mutation inside the
+  frame.
 
-A read-only progress component is lower risk than an embedded receipt flow and
-should come first.
+The generated optional Google Form is a sibling frame owned by the organization,
+not part of the Capital Ark iframe. Organization accounts, saved widget
+configuration, approved-domain controls, custom themes, analytics, API keys,
+and CRM OAuth connections are not implemented in this pilot.
 
-## Readiness gates
+## Readiness gates for future APIs, webhooks, and managed integrations
 
-An API, webhook, or widget is not supported until all applicable boxes are
-complete:
+An API, webhook, or managed integration is not supported until all applicable
+boxes are complete:
 
 - [ ] named owner and versioning/deprecation policy;
 - [ ] authentication, authorization, tenant-isolation, and revocation tests;
