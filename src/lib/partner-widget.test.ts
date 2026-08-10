@@ -55,7 +55,7 @@ describe("partner widget HTML", () => {
     expect(html).not.toContain('data-pwned="yes"');
     expect(html).toContain("&quot;&gt;&lt;script");
     expect(html.match(/<iframe/g)).toHaveLength(1);
-    expect(html.match(/<script>/g)).toHaveLength(1);
+    expect(html.match(/<script>/gi)).toHaveLength(1);
   });
 
   it("escapes visible organization disclosure text", () => {
